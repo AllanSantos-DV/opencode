@@ -258,7 +258,6 @@ describe("PluginSupervisor config", () => {
       }),
     ),
   )
-
 })
 
 const ready = Effect.fnUntraced(function* () {
