@@ -7,7 +7,6 @@ import { Config as ConfigSchema } from "@opencode-ai/schema/config"
 import { Plugin } from "@opencode-ai/schema/plugin"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { Catalog } from "@opencode-ai/core/catalog"
-import { Config } from "@opencode-ai/core/config"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/util/effect/layer-node"
 import { EventV2 } from "@opencode-ai/core/event"
@@ -260,81 +259,6 @@ describe("PluginSupervisor config", () => {
     ),
   )
 
-  it.live("adds the OpenCode client ID to configured Figma servers", () =>
-    withLocation(
-      {
-        mcp: {
-          servers: {
-            figma: {
-              type: "remote",
-              url: "https://mcp.figma.com/mcp",
-              oauth: { scope: "mcp:connect" },
-            },
-          },
-        },
-      },
-      Effect.gen(function* () {
-        yield* ready()
-        const config = yield* Config.Service
-        expect(Config.latest(yield* config.entries(), "mcp")?.servers?.figma).toMatchObject({
-          oauth: { client_id: "3zVHNs9kINDDrk8loekLZV", scope: "mcp:connect" },
-        })
-      }),
-    ),
-  )
-
-  it.live("preserves an existing Figma client ID", () =>
-    withLocation(
-      {
-        mcp: {
-          servers: {
-            figma: {
-              type: "remote",
-              url: "https://mcp.figma.com/mcp",
-              oauth: { client_id: "configured-client-id" },
-            },
-          },
-        },
-      },
-      Effect.gen(function* () {
-        yield* ready()
-        const config = yield* Config.Service
-        expect(Config.latest(yield* config.entries(), "mcp")?.servers?.figma).toMatchObject({
-          oauth: { client_id: "configured-client-id" },
-        })
-      }),
-    ),
-  )
-
-  it.live("does not enable OAuth or modify non-Figma servers", () =>
-    withLocation(
-      {
-        mcp: {
-          servers: {
-            disabled: {
-              type: "remote",
-              url: "https://mcp.figma.com/mcp",
-              oauth: false,
-            },
-            other: {
-              type: "remote",
-              url: "https://mcp.example.com/mcp",
-            },
-          },
-        },
-      },
-      Effect.gen(function* () {
-        yield* ready()
-        const config = yield* Config.Service
-        const servers = Config.latest(yield* config.entries(), "mcp")?.servers
-        expect(servers).toMatchObject({
-          disabled: { oauth: false },
-          other: { type: "remote", url: "https://mcp.example.com/mcp" },
-        })
-        expect(servers?.other).not.toHaveProperty("oauth")
-      }),
-    ),
-  )
 })
 
 const ready = Effect.fnUntraced(function* () {

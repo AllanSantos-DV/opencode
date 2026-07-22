@@ -15,6 +15,7 @@ import { Integration } from "../integration"
 import { IntegrationConnection } from "../integration/connection"
 import { KeyedMutex } from "../effect/keyed-mutex"
 import { Location } from "../location"
+import { FigmaPlugin } from "../plugin/figma"
 import { waitForAbort } from "@opencode-ai/util/process"
 import { State } from "../state"
 import { MCPClient } from "./client"
@@ -194,6 +195,7 @@ export const layer = (options?: Options) => Layer.effect(
     const urlElicitations = new Map<string, Form.ID>()
     for (const entry of documents) {
       for (const [name, server] of Object.entries(entry.info.mcp?.servers ?? {})) {
+        FigmaPlugin.apply(server)
         runtime.set(ServerName.make(name), {
           config: { ...server, timeout: { ...timeout, ...server.timeout } },
           status: { status: "pending" },
@@ -622,6 +624,7 @@ export const layer = (options?: Options) => Layer.effect(
             if (previous.integrationID) owned.delete(previous.integrationID)
             if (previous.registration) yield* previous.registration.dispose
           }
+          FigmaPlugin.apply(config)
           const entry: ServerEntry = {
             config: { ...config, timeout: { ...timeout, ...config.timeout } },
             status: { status: "pending" },
