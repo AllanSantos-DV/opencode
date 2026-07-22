@@ -23,6 +23,7 @@ import { Integration } from "../integration"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { ModelsDev } from "../models-dev"
+import { MCP } from "../mcp/index"
 import { Npm } from "@opencode-ai/util/npm"
 import { PermissionV2 } from "../permission"
 import { PluginV2 } from "../plugin"
@@ -292,6 +293,7 @@ export const node = makeLocationNode({
     Location.node,
     LocationMutation.node,
     ModelsDev.node,
+    MCP.node,
     Npm.node,
     PermissionV2.node,
     PluginRuntime.node,

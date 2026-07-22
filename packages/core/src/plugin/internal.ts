@@ -24,6 +24,7 @@ import { Integration } from "../integration"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { ModelsDev } from "../models-dev"
+import { MCP } from "../mcp/index"
 import { Npm } from "@opencode-ai/util/npm"
 import { PermissionV2 } from "../permission"
 import { Reference } from "../reference"
@@ -48,6 +49,7 @@ import { WellKnown } from "../wellknown"
 import { WriteTool } from "../tool/write"
 import { AgentPlugin } from "./agent"
 import { CommandPlugin } from "./command"
+import { FigmaPlugin } from "./figma"
 import { ModelsDevPlugin } from "./models-dev"
 import { ProviderPlugins } from "./provider"
 import { PluginRuntime } from "./runtime"
@@ -73,6 +75,7 @@ const services = Effect.fn("PluginInternal.services")(function* () {
   const location = yield* Location.Service
   const locationMutation = yield* LocationMutation.Service
   const models = yield* ModelsDev.Service
+  const mcp = yield* MCP.Service
   const npm = yield* Npm.Service
   const permission = yield* PermissionV2.Service
   const runtime = yield* PluginRuntime.Service
@@ -102,6 +105,7 @@ const services = Effect.fn("PluginInternal.services")(function* () {
     Context.make(Location.Service, location),
     Context.make(LocationMutation.Service, locationMutation),
     Context.make(ModelsDev.Service, models),
+    Context.make(MCP.Service, mcp),
     Context.make(Npm.Service, npm),
     Context.make(PermissionV2.Service, permission),
     Context.make(PluginRuntime.Service, runtime),
@@ -126,6 +130,7 @@ export type InternalPlugin = Plugin<Requirements | Scope.Scope>
 
 const pre = [
   WellKnownPlugin.Plugin,
+  FigmaPlugin.Plugin,
   AgentPlugin.Plugin,
   CommandPlugin.Plugin,
   SkillPlugin.Plugin,
