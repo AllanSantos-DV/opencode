@@ -12,19 +12,23 @@ describe("plugin.figma", () => {
 
     FigmaPlugin.apply(server)
 
-    expect(server.oauth).toEqual({ client_id: "3zVHNs9kINDDrk8loekLZV", scope: "mcp:connect" })
+    expect(server.oauth).toEqual({
+      client_id: "3zVHNs9kINDDrk8loekLZV",
+      callback_port: 19876,
+      scope: "mcp:connect",
+    })
   })
 
   test("preserves an existing client ID", () => {
     const server = new ConfigMCP.Remote({
       type: "remote",
       url: "https://mcp.figma.com/mcp",
-      oauth: new ConfigMCP.OAuth({ client_id: "configured-client-id" }),
+      oauth: new ConfigMCP.OAuth({ client_id: "configured-client-id", callback_port: 4321 }),
     })
 
     FigmaPlugin.apply(server)
 
-    expect(server.oauth).toEqual({ client_id: "configured-client-id" })
+    expect(server.oauth).toEqual({ client_id: "configured-client-id", callback_port: 19876 })
   })
 
   test("does not enable OAuth or modify non-Figma servers", () => {

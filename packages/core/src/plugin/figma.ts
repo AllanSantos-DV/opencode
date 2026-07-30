@@ -7,16 +7,16 @@ import { ConfigMCP } from "../config/mcp"
 import { MCP } from "../mcp/index"
 
 const CLIENT_ID = "3zVHNs9kINDDrk8loekLZV"
+const CALLBACK_PORT = 19876
 
 export function apply(server: typeof ConfigMCP.Server.Type) {
   if (server.type !== "remote" || server.oauth === false) return server
   if (!URL.canParse(server.url) || new URL(server.url).hostname !== "mcp.figma.com") return server
-  if (server.oauth?.client_id) return server
   if (server.oauth) {
-    Object.assign(server.oauth, { client_id: CLIENT_ID })
+    Object.assign(server.oauth, { client_id: server.oauth.client_id ?? CLIENT_ID, callback_port: CALLBACK_PORT })
     return server
   }
-  Object.assign(server, { oauth: { client_id: CLIENT_ID } })
+  Object.assign(server, { oauth: { client_id: CLIENT_ID, callback_port: CALLBACK_PORT } })
   return server
 }
 
