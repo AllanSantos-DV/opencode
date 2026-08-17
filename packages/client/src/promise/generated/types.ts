@@ -2,6 +2,8 @@ export type JsonValue = null | boolean | number | string | Array<JsonValue> | { 
 
 export type ServiceHealth = { healthy: true; version: string; pid: number }
 
+export type ServiceStopResponse = { accepted: boolean }
+
 export type ModelRef = { id: string; providerID: string; variant?: string }
 
 export type ProviderSettings = { [x: string]: any }
@@ -10,15 +12,18 @@ export type AgentColor = string
 
 export type PermissionEffect = "allow" | "deny" | "ask"
 
-export type PluginSource =
-  | { type: "builtin" }
-  | { type: "package"; package: string }
-  | { type: "local"; path: string }
-  | { type: "sdk" }
+export type PluginInfo = { id: string }
 
 export type SessionForkBoundary = { type: "before"; messageID: string } | { type: "through"; messageID: string }
 
 export type MoneyUSD = number
+
+export type TokenUsageInfo = {
+  input: number
+  output: number
+  reasoning: number
+  cache: { read: number; write: number }
+}
 
 export type LocationRef = { directory: string; workspaceID?: string }
 
@@ -30,21 +35,104 @@ export type FileDiffInfo = {
   status: "added" | "deleted" | "modified"
 }
 
+export type SessionMessageAgentSelected = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  type: "agent-switched"
+  agent: string
+  previous?: string
+}
+
 export type PromptBase64 = string
 
 export type PromptFileSource = { type: "inline" } | { type: "uri"; uri: string }
 
 export type PromptMention = { start: number; end: number; text: string }
 
+export type SessionMessageSynthetic = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  text: string
+  description?: string
+  type: "synthetic"
+}
+
+export type SessionMessageSystem = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  type: "system"
+  text: string
+  description?: string
+}
+
+export type SessionMessageSkill = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  type: "skill"
+  skill: string
+  name: string
+  text: string
+}
+
+export type SessionMessageShell = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number; completed?: number }
+  type: "shell"
+  shellID: string
+  command: string
+  status: "running" | "exited" | "timeout" | "killed"
+  exit?: number | "Infinity" | "-Infinity" | "NaN"
+  output?: { output: string; cursor: number; size: number; truncated: boolean }
+}
+
+export type SessionMessageProviderState = { [x: string]: JsonValue }
+
 export type SessionMessageToolStateStreaming = { status: "streaming"; input: string }
+
+export type SessionMessageToolStateRunning = {
+  status: "running"
+  input: { [x: string]: JsonValue }
+  metadata: { [x: string]: JsonValue }
+}
 
 export type ToolTextContent = { type: "text"; text: string }
 
+export type ToolFileContent = { type: "file"; uri: string; mime: string; name?: string | null }
+
 export type SessionStructuredError = { type: string; message: string; status?: number }
+
+export type SessionMessageCompactionRunning = {
+  type: "compaction"
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  status: "running"
+  reason: "auto" | "manual"
+  summary: string
+  recent: string
+}
+
+export type SessionMessageCompactionCompleted = {
+  type: "compaction"
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  status: "completed"
+  reason: "auto" | "manual"
+  summary: string
+  recent: string
+}
 
 export type SessionActive = { type: "running" }
 
 export type SessionInboxDelivery = "steer" | "queue"
+
+export type SessionInboxSyntheticPayload = { text: string; description?: string; metadata?: { [x: string]: JsonValue } }
 
 export type SessionInboxCompactionPayload = {}
 
@@ -54,9 +142,32 @@ export type SessionGenerateResponse = { data: { text: string } }
 
 export type SessionInboxSyntheticPayload1 = { text: string; description?: string; metadata?: { [x: string]: any } }
 
-export type SessionMessageProviderState1 = { [x: string]: any }
+export type ShellInfo = {
+  id: string
+  status: "running" | "exited" | "timeout" | "killed"
+  command: string
+  cwd: string
+  shell: string
+  file: string
+  pid?: number
+  exit?: number
+  metadata: { [x: string]: any }
+  time: { started: number; completed?: number }
+}
+
+export type SessionMessageProviderState4 = { [x: string]: any }
+
+export type SessionMessageProviderState5 = { [x: string]: any }
+
+export type SessionMessageProviderState6 = { [x: string]: any }
+
+export type SessionMessageProviderState7 = { [x: string]: any }
 
 export type ToolFileContent1 = { type: "file"; uri: string; mime: string; name?: string | undefined }
+
+export type SessionMessageProviderState8 = { [x: string]: any }
+
+export type SessionMessageProviderState9 = { [x: string]: any }
 
 export type EventLogSynced = { type: "log.synced"; aggregateID: string; seq?: number }
 
@@ -64,9 +175,35 @@ export type ModelReasoningField = "reasoning" | "reasoning_content" | "reasoning
 
 export type ModelMaxTokensField = "max_completion_tokens" | "max_tokens"
 
+export type ModelCapabilities = { tools: boolean; input: Array<string>; output: Array<string> }
+
+export type ModelVariant = {
+  id: string
+  settings?: { [x: string]: any }
+  headers?: { [x: string]: string }
+  body?: { [x: string]: any }
+}
+
 export type MoneyUSDPerMillionTokens = number
 
 export type GenerateTextResponse = { data: { text: string } }
+
+export type ProviderInfo = {
+  id: string
+  integrationID?: string
+  name: string
+  activation: "auto" | "enabled" | "disabled"
+  package: string
+  settings?: { [x: string]: any }
+  headers?: { [x: string]: string }
+  body?: { [x: string]: any }
+}
+
+export type FormWhen = {
+  key: string
+  op: "eq" | "neq"
+  value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
+}
 
 export type FormOption = { value: string; label: string; description?: string }
 
@@ -79,6 +216,50 @@ export type IntegrationEnvMethod = { type: "env"; names: Array<string> }
 export type ConnectionCredentialInfo = { type: "credential"; id: string; label: string }
 
 export type ConnectionEnvInfo = { type: "env"; name: string }
+
+export type IntegrationAttemptStatus =
+  | {
+      status: "pending"
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
+  | {
+      status: "complete"
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
+  | {
+      status: "failed"
+      message: string
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
+  | {
+      status: "expired"
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
+
+export type IntegrationCommandAttempt = {
+  attemptID: string
+  time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+}
+
+export type IntegrationCommandAttemptStatus =
+  | {
+      status: "pending"
+      message?: string
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
+  | {
+      status: "complete"
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
+  | {
+      status: "failed"
+      message: string
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
+  | {
+      status: "expired"
+      time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
+    }
 
 export type McpStatusConnected = { status: "connected" }
 
@@ -109,6 +290,8 @@ export type ProjectCommands = { start?: string }
 export type ProjectTime = { created: number; updated: number; initialized?: number }
 
 export type ProjectCurrent = { id: string; directory: string; canonical: string }
+
+export type FormMetadata = { [x: string]: JsonValue }
 
 export type FormValue = string | number | boolean | Array<string>
 
@@ -156,6 +339,19 @@ export type SessionStatus =
     }
   | { type: "busy" }
 
+export type ShellInfo1 = {
+  id: string
+  status: "running" | "exited" | "timeout" | "killed"
+  command: string
+  cwd: string
+  shell: string
+  file: string
+  pid?: number
+  exit?: number
+  metadata: { [x: string]: JsonValue }
+  time: { started: number; completed?: number }
+}
+
 export type ReferenceLocalSource = { type: "local"; path: string; description?: string; hidden?: boolean }
 
 export type ReferenceGitSource = {
@@ -183,6 +379,15 @@ export type WebSearchProvider = { id: string; name: string }
 
 export type WebSearchResult = { url: string; title?: string; content?: string; time: { published?: number } }
 
+export type SessionMessageModelSelected = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  type: "model-switched"
+  model: ModelRef
+  previous?: ModelRef
+}
+
 export type CommandInfo = {
   name: string
   template: string
@@ -200,66 +405,18 @@ export type ProviderRequest = {
 
 export type PermissionRule = { action: string; resource: string; effect: PermissionEffect }
 
-export type PluginInfo =
-  | { id: string; source: PluginSource; status: "active"; tui: boolean }
-  | { id?: string; source: PluginSource; status: "failed"; error: string; tui: boolean }
-
-export type TokenUsageInfo = {
-  input: number
-  output: number
-  reasoning: number
-  cache: { read: number; write: number }
+export type SessionMessageLocationSwitched = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  type: "location-switched"
+  location: LocationRef
+  projectID?: string
+  subpath?: string
+  previous?: { location: LocationRef; projectID?: string; subpath?: string }
 }
 
 export type SessionInboxMovePayload = { location: LocationRef; projectID: string; subpath?: string }
-
-export type V2EventServerConnected = {
-  id: string
-  metadata?: { [x: string]: any } | undefined
-  location?: LocationRef | undefined
-  type: "server.connected"
-  data: {}
-}
-
-export type SessionMessageProviderState = { [x: string]: JsonValue }
-
-export type SessionMessageToolStateRunning = {
-  status: "running"
-  input: { [x: string]: JsonValue }
-  metadata: { [x: string]: JsonValue }
-}
-
-export type SessionInboxSyntheticPayload = { text: string; description?: string; metadata?: { [x: string]: JsonValue } }
-
-export type FormMetadata = { [x: string]: JsonValue }
-
-export type PromptFileAttachment = {
-  data: PromptBase64
-  mime: string
-  source: PromptFileSource
-  name?: string
-  description?: string
-  mention?: PromptMention
-}
-
-export type PromptAgentAttachment = { name: string; mention?: PromptMention }
-
-export type PromptSkillAttachment = { id: string; name: string; text: string; mention?: PromptMention }
-
-export type ToolFileContent = { type: "file"; uri: string; mime: string; name?: string | null }
-
-export type SessionMessageAssistantRetry = { attempt: number; at: number; error: SessionStructuredError }
-
-export type SessionInboxCompaction = {
-  id: string
-  sessionID: string
-  timeCreated: number
-  type: "compaction"
-  payload: SessionInboxCompactionPayload
-  delivery: SessionInboxDelivery
-}
-
-export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
 
 export type SessionCreated = {
   id: string
@@ -362,16 +519,6 @@ export type SessionInboxCancelled = {
   data: { sessionID: string; inboxID: string }
 }
 
-export type SessionInboxDeliveryChanged = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.inbox.delivery.changed"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; inboxID: string; delivery: SessionInboxDelivery }
-}
-
 export type SessionExecutionStarted = {
   id: string
   created: number
@@ -390,16 +537,6 @@ export type SessionExecutionSucceeded = {
   durable: { aggregateID: string; seq: number; version: 1 }
   location?: LocationRef
   data: { sessionID: string }
-}
-
-export type SessionExecutionFailed = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.execution.failed"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; error: SessionStructuredError }
 }
 
 export type SessionExecutionInterrupted = {
@@ -452,6 +589,24 @@ export type SessionStepStarted = {
   data: { sessionID: string; assistantMessageID: string; agent: string; model: ModelRef; snapshot?: string }
 }
 
+export type SessionStepEnded = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.step.ended"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    assistantMessageID: string
+    finish: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
+    cost: MoneyUSD
+    tokens: TokenUsageInfo
+    snapshot?: string
+    files?: Array<string>
+  }
+}
+
 export type SessionTextStarted = {
   id: string
   created: number
@@ -482,14 +637,24 @@ export type SessionToolInputEnded = {
   data: { sessionID: string; assistantMessageID: string; id: string; text: string }
 }
 
-export type SessionRetryScheduled = {
+export type SessionCompactionStarted = {
   id: string
   created: number
   metadata?: { [x: string]: any }
-  type: "session.retry.scheduled"
+  type: "session.compaction.started"
   durable: { aggregateID: string; seq: number; version: 1 }
   location?: LocationRef
-  data: { sessionID: string; assistantMessageID: string; attempt: number; at: number; error: SessionStructuredError }
+  data: { sessionID: string; reason: "auto" | "manual"; recent: string; inputID?: string }
+}
+
+export type SessionCompactionEnded = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.compaction.ended"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; reason: "auto" | "manual"; text: string; recent: string }
 }
 
 export type SessionRevertCleared = {
@@ -512,49 +677,23 @@ export type SessionRevertCommitted = {
   data: { sessionID: string; to: string }
 }
 
-export type ModelsDevRefreshed = {
+export type SessionUsageRecorded = {
   id: string
   created: number
   metadata?: { [x: string]: any }
-  type: "models-dev.refreshed"
+  type: "session.usage.recorded"
+  durable: { aggregateID: string; seq: number; version: 1 }
   location?: LocationRef
-  data: {}
+  data: { sessionID: string; source: "title" | "compaction"; cost: MoneyUSD; tokens: TokenUsageInfo }
 }
 
-export type IntegrationUpdated = {
+export type SessionUsageUpdated = {
   id: string
   created: number
   metadata?: { [x: string]: any }
-  type: "integration.updated"
+  type: "session.usage.updated"
   location?: LocationRef
-  data: {}
-}
-
-export type IntegrationConnectionUpdated = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "integration.connection.updated"
-  location?: LocationRef
-  data: { integrationID: string }
-}
-
-export type CatalogUpdated = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "catalog.updated"
-  location?: LocationRef
-  data: {}
-}
-
-export type AgentUpdated = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "agent.updated"
-  location?: LocationRef
-  data: {}
+  data: { sessionID: string; cost: MoneyUSD; tokens: TokenUsageInfo }
 }
 
 export type SessionTextDelta = {
@@ -600,6 +739,51 @@ export type SessionCompactionDelta = {
   type: "session.compaction.delta"
   location?: LocationRef
   data: { sessionID: string; text: string }
+}
+
+export type ModelsDevRefreshed = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "models-dev.refreshed"
+  location?: LocationRef
+  data: {}
+}
+
+export type IntegrationUpdated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "integration.updated"
+  location?: LocationRef
+  data: {}
+}
+
+export type IntegrationConnectionUpdated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "integration.connection.updated"
+  location?: LocationRef
+  data: { integrationID: string }
+}
+
+export type CatalogUpdated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "catalog.updated"
+  location?: LocationRef
+  data: {}
+}
+
+export type AgentUpdated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "agent.updated"
+  location?: LocationRef
+  data: {}
 }
 
 export type FilesystemChanged = {
@@ -853,30 +1037,161 @@ export type McpResourcesChanged = {
   data: { server: string }
 }
 
-export type ShellInfo = {
+export type V2EventServerConnected = {
   id: string
-  status: "running" | "exited" | "timeout" | "killed"
-  command: string
-  cwd: string
-  shell: string
-  file: string
-  pid?: number
-  exit?: number
-  metadata: { [x: string]: any }
-  time: { started: number; completed?: number }
+  metadata?: { [x: string]: any } | undefined
+  location?: LocationRef | undefined
+  type: "server.connected"
+  data: {}
 }
 
-export type ShellInfo1 = {
+export type SessionRevert = { messageID: string; partID?: string; snapshot?: string; files?: Array<FileDiffInfo> }
+
+export type PromptFileAttachment = {
+  data: PromptBase64
+  mime: string
+  source: PromptFileSource
+  name?: string
+  description?: string
+  mention?: PromptMention
+}
+
+export type PromptAgentAttachment = { name: string; mention?: PromptMention }
+
+export type PromptSkillAttachment = { id: string; name: string; text: string; mention?: PromptMention }
+
+export type SessionMessageAssistantText = { type: "text"; text: string; state?: SessionMessageProviderState }
+
+export type SessionMessageAssistantReasoning = {
+  type: "reasoning"
+  text: string
+  state?: SessionMessageProviderState
+  time?: { created: number; completed?: number }
+}
+
+export type ToolContent = ToolTextContent | ToolFileContent
+
+export type SessionMessageAssistantRetry = { attempt: number; at: number; error: SessionStructuredError }
+
+export type SessionMessageCompactionFailed = {
+  type: "compaction"
   id: string
-  status: "running" | "exited" | "timeout" | "killed"
-  command: string
-  cwd: string
-  shell: string
-  file: string
-  pid?: number
-  exit?: number
-  metadata: { [x: string]: JsonValue }
-  time: { started: number; completed?: number }
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  status: "failed"
+  reason: "auto" | "manual"
+  error: SessionStructuredError
+}
+
+export type SessionExecutionFailed = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.execution.failed"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; error: SessionStructuredError }
+}
+
+export type SessionStepFailed = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.step.failed"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    assistantMessageID: string
+    error: SessionStructuredError
+    cost?: MoneyUSD
+    tokens?: TokenUsageInfo
+    snapshot?: string
+    files?: Array<string>
+  }
+}
+
+export type SessionRetryScheduled = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.retry.scheduled"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; assistantMessageID: string; attempt: number; at: number; error: SessionStructuredError }
+}
+
+export type SessionCompactionFailed = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.compaction.failed"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; reason: "auto" | "manual"; error: SessionStructuredError; inputID?: string }
+}
+
+export type SessionInboxDeliveryChanged = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.inbox.delivery.changed"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; inboxID: string; delivery: SessionInboxDelivery }
+}
+
+export type SessionInboxSynthetic = {
+  id: string
+  sessionID: string
+  timeCreated: number
+  type: "synthetic"
+  payload: SessionInboxSyntheticPayload
+  delivery: SessionInboxDelivery
+}
+
+export type SessionInboxCompaction = {
+  id: string
+  sessionID: string
+  timeCreated: number
+  type: "compaction"
+  payload: SessionInboxCompactionPayload
+  delivery: SessionInboxDelivery
+}
+
+export type InstructionEntryInfo = { key: InstructionEntryKey; value: JsonValue }
+
+export type SessionShellStarted = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.shell.started"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; shell: ShellInfo }
+}
+
+export type SessionShellEnded = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.shell.ended"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    shell: ShellInfo
+    output: { output: string; cursor: number; size: number; truncated: boolean }
+  }
+}
+
+export type ShellCreated = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "shell.created"
+  location?: LocationRef
+  data: { info: ShellInfo }
 }
 
 export type SessionTextEnded = {
@@ -891,7 +1206,7 @@ export type SessionTextEnded = {
     assistantMessageID: string
     ordinal: number
     text: string
-    state?: SessionMessageProviderState1
+    state?: SessionMessageProviderState4
   }
 }
 
@@ -902,7 +1217,7 @@ export type SessionReasoningStarted = {
   type: "session.reasoning.started"
   durable: { aggregateID: string; seq: number; version: 1 }
   location?: LocationRef
-  data: { sessionID: string; assistantMessageID: string; ordinal: number; state?: SessionMessageProviderState1 }
+  data: { sessionID: string; assistantMessageID: string; ordinal: number; state?: SessionMessageProviderState5 }
 }
 
 export type SessionReasoningEnded = {
@@ -917,7 +1232,7 @@ export type SessionReasoningEnded = {
     assistantMessageID: string
     ordinal: number
     text: string
-    state?: SessionMessageProviderState1
+    state?: SessionMessageProviderState6
   }
 }
 
@@ -934,41 +1249,11 @@ export type SessionToolCalled = {
     id: string
     input: { [x: string]: any }
     executed: boolean
-    state?: SessionMessageProviderState1
+    state?: SessionMessageProviderState7
   }
 }
 
 export type ToolContent1 = ToolTextContent | ToolFileContent1
-
-export type SessionCompactionStarted = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.compaction.started"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; reason: "auto" | "manual"; recent: string; inputID?: string }
-}
-
-export type SessionCompactionEnded = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.compaction.ended"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; reason: "auto" | "manual"; text: string; recent: string }
-}
-
-export type SessionCompactionFailed = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.compaction.failed"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; reason: "auto" | "manual"; error: SessionStructuredError; inputID?: string }
-}
 
 export type ModelCompatibility = {
   reasoningField?: ModelReasoningField
@@ -976,31 +1261,76 @@ export type ModelCompatibility = {
   requireFinishReason?: boolean
 }
 
-export type ModelVariant = {
-  id: string
-  settings?: { [x: string]: any }
-  headers?: { [x: string]: string }
-  body?: { [x: string]: any }
-}
-
-export type ProviderInfo = {
-  id: string
-  integrationID?: string
-  name: string
-  activation: "auto" | "enabled" | "disabled"
-  package: string
-  settings?: { [x: string]: any }
-  headers?: { [x: string]: string }
-  body?: { [x: string]: any }
-}
-
-export type ModelCapabilities = { tools: boolean; input: Array<string>; output: Array<string> }
-
 export type ModelCost = {
   tier?: { type: "context"; size: number }
   input: MoneyUSDPerMillionTokens
   output: MoneyUSDPerMillionTokens
   cache: { read: MoneyUSDPerMillionTokens; write: MoneyUSDPerMillionTokens }
+}
+
+export type FormNumberField = {
+  key: string
+  title?: string
+  description?: string
+  required?: boolean
+  when?: Array<FormWhen>
+  type: "number"
+  minimum?: number | "Infinity" | "-Infinity" | "NaN"
+  maximum?: number | "Infinity" | "-Infinity" | "NaN"
+  default?: number | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type FormIntegerField = {
+  key: string
+  title?: string
+  description?: string
+  required?: boolean
+  when?: Array<FormWhen>
+  type: "integer"
+  minimum?: number | "Infinity" | "-Infinity" | "NaN"
+  maximum?: number | "Infinity" | "-Infinity" | "NaN"
+  default?: number | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type FormBooleanField = {
+  key: string
+  title?: string
+  description?: string
+  required?: boolean
+  when?: Array<FormWhen>
+  type: "boolean"
+  default?: boolean
+}
+
+export type FormStringField = {
+  key: string
+  title?: string
+  description?: string
+  required?: boolean
+  when?: Array<FormWhen>
+  type: "string"
+  format?: "email" | "uri" | "date" | "date-time"
+  minLength?: number
+  maxLength?: number
+  pattern?: string
+  placeholder?: string
+  default?: string
+  options?: Array<FormOption>
+  custom?: boolean
+}
+
+export type FormMultiselectField = {
+  key: string
+  title?: string
+  description?: string
+  required?: boolean
+  when?: Array<FormWhen>
+  type: "multiselect"
+  options: Array<FormOption>
+  minItems?: number
+  maxItems?: number
+  custom?: boolean
+  default?: Array<string>
 }
 
 export type ConnectionInfo = ConnectionCredentialInfo | ConnectionEnvInfo
@@ -1080,317 +1410,6 @@ export type PtyUpdated = {
   data: { info: Pty }
 }
 
-export type SessionStatus2 = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.status"
-  location?: LocationRef
-  data: { sessionID: string; status: SessionStatus }
-}
-
-export type ReferenceSource = ReferenceLocalSource | ReferenceGitSource
-
-export type WorktreeList = Array<WorktreeDirectory>
-
-export type VcsInfo = { branch: VcsBranch }
-
-export type PermissionRuleset = Array<PermissionRule>
-
-export type SessionStepEnded = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.step.ended"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    assistantMessageID: string
-    finish: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
-    cost: MoneyUSD
-    tokens: TokenUsageInfo
-    snapshot?: string
-    files?: Array<string>
-  }
-}
-
-export type SessionUsageRecorded = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.usage.recorded"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; source: "title" | "compaction"; cost: MoneyUSD; tokens: TokenUsageInfo }
-}
-
-export type SessionUsageUpdated = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.usage.updated"
-  location?: LocationRef
-  data: { sessionID: string; cost: MoneyUSD; tokens: TokenUsageInfo }
-}
-
-export type SessionStepFailed = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.step.failed"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    assistantMessageID: string
-    error: SessionStructuredError
-    cost?: MoneyUSD
-    tokens?: TokenUsageInfo
-    snapshot?: string
-    files?: Array<string>
-  }
-}
-
-export type SessionInboxMove = {
-  id: string
-  sessionID: string
-  timeCreated: number
-  type: "move"
-  payload: SessionInboxMovePayload
-  delivery: SessionInboxDelivery
-}
-
-export type SessionRevert = { messageID: string; partID?: string; snapshot?: string; files?: Array<FileDiffInfo> }
-
-export type SessionMessageAgentSelected = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  type: "agent-switched"
-  agent: string
-  previous?: string
-}
-
-export type SessionMessageModelSelected = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  type: "model-switched"
-  model: ModelRef
-  previous?: ModelRef
-}
-
-export type SessionMessageLocationSwitched = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  type: "location-switched"
-  location: LocationRef
-  projectID?: string
-  subpath?: string
-  previous?: { location: LocationRef; projectID?: string; subpath?: string }
-}
-
-export type SessionMessageSynthetic = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  text: string
-  description?: string
-  type: "synthetic"
-}
-
-export type SessionMessageSystem = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  type: "system"
-  text: string
-  description?: string
-}
-
-export type SessionMessageSkill = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  type: "skill"
-  skill: string
-  name: string
-  text: string
-}
-
-export type SessionMessageShell = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number; completed?: number }
-  type: "shell"
-  shellID: string
-  command: string
-  status: "running" | "exited" | "timeout" | "killed"
-  exit?: number | ("Infinity" | "-Infinity" | "NaN")
-  output?: { output: string; cursor: number; size: number; truncated: boolean }
-}
-
-export type SessionMessageCompactionRunning = {
-  type: "compaction"
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  status: "running"
-  reason: "auto" | "manual"
-  summary: string
-  recent: string
-}
-
-export type SessionMessageCompactionCompleted = {
-  type: "compaction"
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  status: "completed"
-  reason: "auto" | "manual"
-  summary: string
-  recent: string
-}
-
-export type SessionMessageCompactionFailed = {
-  type: "compaction"
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  status: "failed"
-  reason: "auto" | "manual"
-  error: SessionStructuredError
-}
-
-export type SessionMessageAssistantText = { type: "text"; text: string; state?: SessionMessageProviderState }
-
-export type SessionMessageAssistantReasoning = {
-  type: "reasoning"
-  text: string
-  state?: SessionMessageProviderState
-  time?: { created: number; completed?: number }
-}
-
-export type SessionInboxSynthetic = {
-  id: string
-  sessionID: string
-  timeCreated: number
-  type: "synthetic"
-  payload: SessionInboxSyntheticPayload
-  delivery: SessionInboxDelivery
-}
-
-export type FormWhen = {
-  key: string
-  op: "eq" | "neq"
-  value: string | (number | ("Infinity" | "-Infinity" | "NaN")) | boolean
-}
-
-export type ToolContent = ToolTextContent | ToolFileContent
-
-export type SessionShellStarted = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.shell.started"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; shell: ShellInfo }
-}
-
-export type SessionShellEnded = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.shell.ended"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    shell: ShellInfo
-    output: { output: string; cursor: number; size: number; truncated: boolean }
-  }
-}
-
-export type ShellCreated = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "shell.created"
-  location?: LocationRef
-  data: { info: ShellInfo }
-}
-
-export type SessionToolSuccess = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.tool.success"
-  durable: { aggregateID: string; seq: number; version: 2 }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    assistantMessageID: string
-    id: string
-    content: [ToolContent1, ...Array<ToolContent1>]
-    metadata?: { [x: string]: JsonValue }
-    executed: boolean
-    resultState?: SessionMessageProviderState1
-  }
-}
-
-export type SessionToolFailed = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.tool.failed"
-  durable: { aggregateID: string; seq: number; version: 2 }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    assistantMessageID: string
-    id: string
-    error: SessionStructuredError
-    content?: [ToolContent1, ...Array<ToolContent1>]
-    metadata?: { [x: string]: JsonValue }
-    executed: boolean
-    resultState?: SessionMessageProviderState1
-  }
-}
-
-export type ModelInfo = {
-  id: string
-  modelID: string
-  providerID: string
-  family?: string
-  name: string
-  compatibility?: ModelCompatibility
-  package?: string
-  settings?: { [x: string]: any }
-  headers?: { [x: string]: string }
-  body?: { [x: string]: any }
-  capabilities: ModelCapabilities
-  variants: Array<ModelVariant>
-  time: { released: number }
-  cost: Array<ModelCost>
-  status: "alpha" | "beta" | "deprecated" | "active"
-  enabled: boolean
-  limit: { context: number; input?: number; output: number }
-}
-
-export type FormState = { status: "pending" } | { status: "answered"; answer: FormAnswer } | { status: "cancelled" }
-
-export type FormReplied = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "form.replied"
-  location?: LocationRef
-  data: { id: string; sessionID: string; answer: FormAnswer }
-}
-
 export type FormStringField1 = {
   key: string
   title?: string
@@ -1455,6 +1474,189 @@ export type FormMultiselectField1 = {
   custom?: boolean
   default?: Array<string>
 }
+
+export type SessionStatus2 = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.status"
+  location?: LocationRef
+  data: { sessionID: string; status: SessionStatus }
+}
+
+export type ReferenceSource = ReferenceLocalSource | ReferenceGitSource
+
+export type WorktreeList = Array<WorktreeDirectory>
+
+export type VcsInfo = { branch: VcsBranch }
+
+export type PermissionRuleset = Array<PermissionRule>
+
+export type SessionInboxMove = {
+  id: string
+  sessionID: string
+  timeCreated: number
+  type: "move"
+  payload: SessionInboxMovePayload
+  delivery: SessionInboxDelivery
+}
+
+export type SessionInfo = {
+  id: string
+  parentID?: string
+  fork?: { sessionID: string; boundary: SessionForkBoundary }
+  projectID: string
+  agent?: string
+  model?: ModelRef
+  cost: MoneyUSD
+  tokens: TokenUsageInfo
+  time: { created: number; updated: number; archived?: number }
+  title?: string
+  location: LocationRef
+  subpath?: string
+  revert?: SessionRevert
+}
+
+export type SessionRevertStaged = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.revert.staged"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; revert: SessionRevert }
+}
+
+export type SessionMessageUser = {
+  id: string
+  metadata?: { [x: string]: JsonValue }
+  time: { created: number }
+  text: string
+  files?: Array<PromptFileAttachment>
+  agents?: Array<PromptAgentAttachment>
+  skills?: Array<PromptSkillAttachment>
+  type: "user"
+}
+
+export type SessionInboxUserPayload = {
+  text: string
+  files?: Array<PromptFileAttachment>
+  agents?: Array<PromptAgentAttachment>
+  skills?: Array<PromptSkillAttachment>
+  metadata?: { [x: string]: JsonValue }
+}
+
+export type SessionInboxUserPayload1 = {
+  text: string
+  files?: Array<PromptFileAttachment>
+  agents?: Array<PromptAgentAttachment>
+  skills?: Array<PromptSkillAttachment>
+  metadata?: { [x: string]: any }
+}
+
+export type SessionMessageToolStateCompleted = {
+  status: "completed"
+  input: { [x: string]: JsonValue }
+  content: [ToolContent, ...Array<ToolContent>]
+  metadata?: { [x: string]: JsonValue }
+}
+
+export type SessionMessageToolStateError = {
+  status: "error"
+  input: { [x: string]: JsonValue }
+  error: SessionStructuredError
+  content?: [ToolContent, ...Array<ToolContent>]
+  metadata?: { [x: string]: JsonValue }
+}
+
+export type SessionMessageCompaction =
+  | SessionMessageCompactionRunning
+  | SessionMessageCompactionCompleted
+  | SessionMessageCompactionFailed
+
+export type SessionToolSuccess = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.tool.success"
+  durable: { aggregateID: string; seq: number; version: 2 }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    assistantMessageID: string
+    id: string
+    content: [ToolContent1, ...Array<ToolContent1>]
+    metadata?: { [x: string]: JsonValue }
+    executed: boolean
+    resultState?: SessionMessageProviderState8
+  }
+}
+
+export type SessionToolFailed = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.tool.failed"
+  durable: { aggregateID: string; seq: number; version: 2 }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    assistantMessageID: string
+    id: string
+    error: SessionStructuredError
+    content?: [ToolContent1, ...Array<ToolContent1>]
+    metadata?: { [x: string]: JsonValue }
+    executed: boolean
+    resultState?: SessionMessageProviderState9
+  }
+}
+
+export type ModelInfo = {
+  id: string
+  modelID: string
+  providerID: string
+  family?: string
+  name: string
+  compatibility?: ModelCompatibility
+  package?: string
+  settings?: { [x: string]: any }
+  headers?: { [x: string]: string }
+  body?: { [x: string]: any }
+  capabilities: ModelCapabilities
+  variants: Array<ModelVariant>
+  time: { released: number }
+  cost: Array<ModelCost>
+  status: "alpha" | "beta" | "deprecated" | "active"
+  enabled: boolean
+  limit: { context: number; input?: number; output: number }
+}
+
+export type FormField =
+  | FormStringField
+  | FormNumberField
+  | FormIntegerField
+  | FormBooleanField
+  | FormMultiselectField
+  | FormExternalField
+
+export type FormState = { status: "pending" } | { status: "answered"; answer: FormAnswer } | { status: "cancelled" }
+
+export type FormReplied = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "form.replied"
+  location?: LocationRef
+  data: { id: string; sessionID: string; answer: FormAnswer }
+}
+
+export type FormField1 =
+  | FormStringField1
+  | FormNumberField1
+  | FormIntegerField1
+  | FormBooleanField1
+  | FormMultiselectField1
+  | FormExternalField
 
 export type ReferenceInfo = {
   name: string
@@ -1643,155 +1845,6 @@ export type ConfigEntry =
   | { type: "agents"; path: string }
   | { type: "claude"; path: string }
 
-export type SessionInfo = {
-  id: string
-  parentID?: string
-  fork?: { sessionID: string; boundary: SessionForkBoundary }
-  projectID: string
-  agent?: string
-  model?: ModelRef
-  cost: MoneyUSD
-  tokens: TokenUsageInfo
-  time: { created: number; updated: number; archived?: number }
-  title?: string
-  location: LocationRef
-  subpath?: string
-  revert?: SessionRevert
-}
-
-export type SessionRevertStaged = {
-  id: string
-  created: number
-  metadata?: { [x: string]: any }
-  type: "session.revert.staged"
-  durable: { aggregateID: string; seq: number; version: 1 }
-  location?: LocationRef
-  data: { sessionID: string; revert: SessionRevert }
-}
-
-export type SessionMessageCompaction =
-  | SessionMessageCompactionRunning
-  | SessionMessageCompactionCompleted
-  | SessionMessageCompactionFailed
-
-export type SessionMessageUser = {
-  id: string
-  metadata?: { [x: string]: JsonValue }
-  time: { created: number }
-  text: string
-  files?: Array<PromptFileAttachment>
-  agents?: Array<PromptAgentAttachment>
-  skills?: Array<PromptSkillAttachment>
-  type: "user"
-}
-
-export type SessionInboxUserPayload = {
-  text: string
-  files?: Array<PromptFileAttachment>
-  agents?: Array<PromptAgentAttachment>
-  skills?: Array<PromptSkillAttachment>
-  metadata?: { [x: string]: JsonValue }
-}
-
-export type SessionInboxUserPayload1 = {
-  text: string
-  files?: Array<PromptFileAttachment>
-  agents?: Array<PromptAgentAttachment>
-  skills?: Array<PromptSkillAttachment>
-  metadata?: { [x: string]: any }
-}
-
-export type IntegrationAttemptStatus =
-  | {
-      status: "pending"
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-  | {
-      status: "complete"
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-  | {
-      status: "failed"
-      message: string
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-  | {
-      status: "expired"
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-
-export type IntegrationCommandAttempt = {
-  attemptID: string
-  time: { created: number | ("Infinity" | "-Infinity" | "NaN"); expires: number | ("Infinity" | "-Infinity" | "NaN") }
-}
-
-export type IntegrationCommandAttemptStatus =
-  | {
-      status: "pending"
-      message?: string
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-  | {
-      status: "complete"
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-  | {
-      status: "failed"
-      message: string
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-  | {
-      status: "expired"
-      time: {
-        created: number | ("Infinity" | "-Infinity" | "NaN")
-        expires: number | ("Infinity" | "-Infinity" | "NaN")
-      }
-    }
-
-export type SessionMessageToolStateCompleted = {
-  status: "completed"
-  input: { [x: string]: JsonValue }
-  content: [ToolContent, ...Array<ToolContent>]
-  metadata?: { [x: string]: JsonValue }
-}
-
-export type SessionMessageToolStateError = {
-  status: "error"
-  input: { [x: string]: JsonValue }
-  error: SessionStructuredError
-  content?: [ToolContent, ...Array<ToolContent>]
-  metadata?: { [x: string]: JsonValue }
-}
-
-export type FormField1 =
-  | FormStringField1
-  | FormNumberField1
-  | FormIntegerField1
-  | FormBooleanField1
-  | FormMultiselectField1
-  | FormExternalField
-
 export type SessionsResponse = { data: Array<SessionInfo>; cursor: { previous?: string | null; next?: string | null } }
 
 export type SessionInboxUser = {
@@ -1809,71 +1862,6 @@ export type SessionInboxItem =
   | { type: "compaction"; payload: SessionInboxCompactionPayload; delivery: SessionInboxDelivery }
   | { type: "move"; payload: SessionInboxMovePayload; delivery: SessionInboxDelivery }
 
-export type FormStringField = {
-  key: string
-  title?: string
-  description?: string
-  required?: boolean
-  when?: Array<FormWhen>
-  type: "string"
-  format?: "email" | "uri" | "date" | "date-time"
-  minLength?: number
-  maxLength?: number
-  pattern?: string
-  placeholder?: string
-  default?: string
-  options?: Array<FormOption>
-  custom?: boolean
-}
-
-export type FormNumberField = {
-  key: string
-  title?: string
-  description?: string
-  required?: boolean
-  when?: Array<FormWhen>
-  type: "number"
-  minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-  maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-  default?: number | ("Infinity" | "-Infinity" | "NaN")
-}
-
-export type FormIntegerField = {
-  key: string
-  title?: string
-  description?: string
-  required?: boolean
-  when?: Array<FormWhen>
-  type: "integer"
-  minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-  maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-  default?: number | ("Infinity" | "-Infinity" | "NaN")
-}
-
-export type FormBooleanField = {
-  key: string
-  title?: string
-  description?: string
-  required?: boolean
-  when?: Array<FormWhen>
-  type: "boolean"
-  default?: boolean
-}
-
-export type FormMultiselectField = {
-  key: string
-  title?: string
-  description?: string
-  required?: boolean
-  when?: Array<FormWhen>
-  type: "multiselect"
-  options: Array<FormOption>
-  minItems?: number
-  maxItems?: number
-  custom?: boolean
-  default?: Array<string>
-}
-
 export type SessionMessageAssistantTool = {
   type: "tool"
   id: string
@@ -1889,7 +1877,9 @@ export type SessionMessageAssistantTool = {
   time: { created: number; ran?: number; completed?: number }
 }
 
-export type FormFields2 = [FormField1, ...Array<FormField1>]
+export type FormFields = [FormField, ...Array<FormField>]
+
+export type FormFields3 = [FormField1, ...Array<FormField1>]
 
 export type SessionInboxInfo = SessionInboxUser | SessionInboxSynthetic | SessionInboxCompaction | SessionInboxMove
 
@@ -1902,14 +1892,6 @@ export type SessionInboxEnqueued = {
   location?: LocationRef
   data: { sessionID: string; inboxID: string; item: SessionInboxItem }
 }
-
-export type FormField =
-  | FormStringField
-  | FormNumberField
-  | FormIntegerField
-  | FormBooleanField
-  | FormMultiselectField
-  | FormExternalField
 
 export type SessionMessageAssistant = {
   id: string
@@ -1927,7 +1909,13 @@ export type SessionMessageAssistant = {
   retry?: SessionMessageAssistantRetry
 }
 
-export type FormInfo1 = { id: string; sessionID: string; title: string; metadata?: FormMetadata1; fields: FormFields2 }
+export type IntegrationOAuthMethod = { id: string; type: "oauth"; label: string; form?: FormFields }
+
+export type IntegrationKeyMethod = { type: "key"; label?: string; form?: FormFields }
+
+export type FormInfo = { id: string; sessionID: string; title: string; metadata?: FormMetadata; fields: FormFields }
+
+export type FormInfo1 = { id: string; sessionID: string; title: string; metadata?: FormMetadata1; fields: FormFields3 }
 
 export type SessionEventDurable =
   | SessionCreated
@@ -1971,8 +1959,6 @@ export type SessionEventDurable =
   | SessionRevertCommitted
   | SessionUsageRecorded
 
-export type FormFields = [FormField, ...Array<FormField>]
-
 export type SessionMessageInfo =
   | SessionMessageAgentSelected
   | SessionMessageModelSelected
@@ -1985,6 +1971,12 @@ export type SessionMessageInfo =
   | SessionMessageAssistant
   | SessionMessageCompaction
 
+export type IntegrationMethod =
+  | IntegrationOAuthMethod
+  | IntegrationCommandMethod
+  | IntegrationKeyMethod
+  | IntegrationEnvMethod
+
 export type FormCreated = {
   id: string
   created: number
@@ -1994,13 +1986,15 @@ export type FormCreated = {
   data: { form: FormInfo1 }
 }
 
-export type SessionLogItem = SessionEventDurable | EventLogSynced
-
-export type IntegrationOAuthMethod = { id: string; type: "oauth"; label: string; form?: FormFields }
-
-export type IntegrationKeyMethod = { type: "key"; label?: string; form?: FormFields }
-
-export type FormInfo = { id: string; sessionID: string; title: string; metadata?: FormMetadata; fields: FormFields }
+export type SessionLogItem =
+  | SessionEventDurable
+  | SessionUsageUpdated
+  | SessionTextDelta
+  | SessionReasoningDelta
+  | SessionToolInputDelta
+  | SessionToolProgress
+  | SessionCompactionDelta
+  | EventLogSynced
 
 export type SessionTransferData = { info: SessionInfo; messages: Array<SessionMessageInfo> }
 
@@ -2017,6 +2011,13 @@ export type SessionSnapshotResponse = {
 export type SessionMessagesResponse = {
   data: Array<SessionMessageInfo>
   cursor: { previous?: string | null; next?: string | null }
+}
+
+export type IntegrationInfo = {
+  id: string
+  name: string
+  methods: Array<IntegrationMethod>
+  connections: Array<ConnectionInfo>
 }
 
 export type V2Event =
@@ -2104,19 +2105,6 @@ export type V2Event =
   | McpStatusChanged
   | McpResourcesChanged
   | V2EventServerConnected
-
-export type IntegrationMethod =
-  | IntegrationOAuthMethod
-  | IntegrationCommandMethod
-  | IntegrationKeyMethod
-  | IntegrationEnvMethod
-
-export type IntegrationInfo = {
-  id: string
-  name: string
-  methods: Array<IntegrationMethod>
-  connections: Array<ConnectionInfo>
-}
 
 export type UnauthorizedError = { readonly _tag: "UnauthorizedError"; readonly message: string }
 export const isUnauthorizedError = (value: unknown): value is UnauthorizedError =>
@@ -2228,6 +2216,16 @@ export const isInstructionEntryValueTooLargeError = (value: unknown): value is I
   "_tag" in value &&
   value["_tag"] === "InstructionEntryValueTooLargeError"
 
+export type SeqUnavailableError = {
+  readonly _tag: "SeqUnavailableError"
+  readonly sessionID: string
+  readonly after: number
+  readonly head?: number | undefined
+  readonly message: string
+}
+export const isSeqUnavailableError = (value: unknown): value is SeqUnavailableError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SeqUnavailableError"
+
 export type ProviderNotFoundError = {
   readonly _tag: "ProviderNotFoundError"
   readonly providerID: string
@@ -2288,6 +2286,10 @@ export const isWorktreeError = (value: unknown): value is WorktreeError =>
   typeof value === "object" && value !== null && "name" in value && value["name"] === "WorktreeError"
 
 export type HealthGetOutput = ServiceHealth
+
+export type HealthStopInput = { readonly instanceID: { readonly instanceID: string }["instanceID"] }
+
+export type HealthStopOutput = ServiceStopResponse
 
 export type ServerGetOutput = { urls: Array<string> }
 
@@ -3945,8 +3947,21 @@ export type SessionGenerateOutput = SessionGenerateResponse["data"]
 
 export type SessionLogInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly after?: { readonly after?: number | undefined; readonly follow?: boolean | undefined }["after"]
-  readonly follow?: { readonly after?: number | undefined; readonly follow?: boolean | undefined }["follow"]
+  readonly after?: {
+    readonly after?: number | undefined
+    readonly follow?: boolean | undefined
+    readonly ephemeral?: boolean | undefined
+  }["after"]
+  readonly follow?: {
+    readonly after?: number | undefined
+    readonly follow?: boolean | undefined
+    readonly ephemeral?: boolean | undefined
+  }["follow"]
+  readonly ephemeral?: {
+    readonly after?: number | undefined
+    readonly follow?: boolean | undefined
+    readonly ephemeral?: boolean | undefined
+  }["ephemeral"]
 }
 
 export type SessionLogOutput = SessionLogItem
@@ -3968,13 +3983,6 @@ export type SessionMessageInput = {
 }
 
 export type SessionMessageOutput = { data: SessionMessageInfo }["data"]
-
-export type SessionEnvironmentInput = {
-  readonly sessionID: { readonly sessionID: string }["sessionID"]
-  readonly variables: { readonly variables: { readonly [x: string]: string } }["variables"]
-}
-
-export type SessionEnvironmentOutput = void
 
 export type MessageListInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
@@ -4143,7 +4151,7 @@ export type IntegrationOauthConnectOutput = {
     url: string
     instructions: string
     mode: "auto" | "code"
-    time: { created: number | ("Infinity" | "-Infinity" | "NaN"); expires: number | ("Infinity" | "-Infinity" | "NaN") }
+    time: { created: number | "Infinity" | "-Infinity" | "NaN"; expires: number | "Infinity" | "-Infinity" | "NaN" }
   }
 }
 
@@ -4365,7 +4373,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -4389,12 +4397,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4404,12 +4412,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4419,7 +4427,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -4432,7 +4440,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
@@ -4462,7 +4470,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -4486,12 +4494,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4501,12 +4509,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4516,7 +4524,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -4529,7 +4537,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
@@ -4566,7 +4574,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -4590,12 +4598,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4605,12 +4613,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4620,7 +4628,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -4633,7 +4641,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
@@ -4663,7 +4671,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -4687,12 +4695,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4702,12 +4710,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4717,7 +4725,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -4730,7 +4738,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
@@ -4767,7 +4775,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -4791,12 +4799,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4806,12 +4814,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4821,7 +4829,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -4834,7 +4842,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
@@ -4864,7 +4872,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -4888,12 +4896,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4903,12 +4911,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -4918,7 +4926,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -4931,7 +4939,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
@@ -4968,7 +4976,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -4992,12 +5000,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -5007,12 +5015,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -5022,7 +5030,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -5035,7 +5043,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
@@ -5065,7 +5073,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "string"
             readonly format?: "email" | "uri" | "date" | "date-time"
@@ -5089,12 +5097,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "number"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -5104,12 +5112,12 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "integer"
-            readonly minimum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly maximum?: number | ("Infinity" | "-Infinity" | "NaN")
-            readonly default?: number | ("Infinity" | "-Infinity" | "NaN")
+            readonly minimum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly maximum?: number | "Infinity" | "-Infinity" | "NaN"
+            readonly default?: number | "Infinity" | "-Infinity" | "NaN"
           }
         | {
             readonly key: string
@@ -5119,7 +5127,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "boolean"
             readonly default?: boolean
@@ -5132,7 +5140,7 @@ export type FormCreateInput = {
             readonly when?: ReadonlyArray<{
               readonly key: string
               readonly op: "eq" | "neq"
-              readonly value: string | number | ("Infinity" | "-Infinity" | "NaN") | boolean
+              readonly value: string | number | "Infinity" | "-Infinity" | "NaN" | boolean
             }>
             readonly type: "multiselect"
             readonly options: ReadonlyArray<{
