@@ -273,3 +273,64 @@ Remaining gap at scale: ~10ns per message per delta of identity walking
 The trade in one sentence: the legacy layer optimizes for the cheapest
 possible patch per event; the engine optimizes for the cheapest possible
 *proof* that the client shows what the server knows.
+
+---
+
+## Future directions (design notes)
+
+Each of these replaces a boundary around the engine, not the engine itself —
+its `snapshot`/`stream`/`submit` transport seam and pure fold stay put.
+
+### 1. One fold — tables as indexes, not truth
+
+Objection: the server saves into SQL *tables*, not one state value, so how
+can server and client share a fold? Answer: distinguish the aggregate's
+**client-visible state** (what snapshots and views show) from the server's
+**query indexes** (session lists, search). The shared fold defines only the
+former. Two server shapes make it work:
+
+- persist the event log as truth and compute snapshot responses by running
+  the shared fold (cached / checkpointed every N events), or
+- persist the fold *output* transactionally with each event append and serve
+  snapshots from it.
+
+Either way SQL tables become **derived indexes computed from fold output** —
+free to take any shape, unable to disagree with what clients render.
+Convergence stops being a law and becomes a construction. Near-term bridge:
+the fold/projector equivalence test against the real embedded server (replay
+recorded event streams, assert projected snapshot ≡ client fold).
+
+### 2. Quark as the reactive layer
+
+`~/code/open-source/quark` — explicit identity/equivalence reactivity:
+values are immutable snapshots by law, `Keyed` collections split structure
+from value publication, computeds cut off on reference equality and receive
+their previous value, `Layout` compiles per-field diff bitmasks. Solid
+adapter (`useValue`/`useSlot`/`KeyedFor`) plus an experimental direct
+OpenTUI JSX runtime (`quark-opentui-jsx`).
+
+The fit is exact: the engine's `SessionView` *is* Quark's input contract —
+immutable, keyed by message ID, unchanged parts reference-stable. With
+`Keyed.set(view.messages)` per publish, the entire adapter apparatus
+(clone boundary, identity diff, `StoreSessionView`) disappears, because
+nothing downstream mutates stored values — the one Solid behavior
+(`reconcile` mutating in place) that forced it all.
+
+Path: engine → Quark `Keyed` → Solid adapter inside the existing TUI
+(incremental), with the OpenTUI JSX runtime as the eventual Solid-free
+endgame. Caveats: month-old private prototype, flat keyed collections only
+(fine for transcripts), needs productionizing.
+
+### 3. Multiplexed transport
+
+One WebSocket / RPC stream carrying `subscribe { aggregate, after }` frames
+instead of one SSE per open session — per-aggregate cursors over a single
+connection, ambient events become just another subscription (subsumes S4).
+Only the transport implementation changes.
+
+### 4. Smaller notes
+
+- durable outbox (SQLite/IndexedDB spool) for offline-safe writes
+- typed overlay part addresses instead of string keys
+- windowed views: bounded recent fold window + paged history
+
