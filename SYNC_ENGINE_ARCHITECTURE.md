@@ -33,6 +33,12 @@ src/solid
 └── data.ts          1,527 lines · legacy layer (still serves the web app)
 ```
 
+Size, honestly: the engine's 1,349 lines replace only `data.ts`'s *session
+sync* portion (~654 lines) — the rest of `data.ts` covers other domains
+(projects, locations, VCS, …) and still runs underneath as a shim. So the
+engine is ~2× the code it replaces; the extra lines are the behaviors legacy
+doesn't have at all (snapshot/cursor recovery, outbox, reconnect proofs).
+
 ---
 
 ## How a token delta flows
