@@ -104,19 +104,33 @@ function TimelineThinkingRow(props: { reasoningHeading?: string; showReasoningSu
   )
 }
 
-function TimelineSeparator(props: { label: string; providerID?: string }) {
+function TimelineSeparator(props: { label: string; providerID?: string; variant?: string }) {
   return (
     <div class="flex h-8 w-full items-center gap-3 text-v2-text-text-faint">
-      <span class="h-px min-w-0 flex-1 bg-v2-border-border-base" />
+      <span class="h-px min-w-0 flex-1 bg-v2-border-border-strong" />
       <span class="flex min-w-0 items-center gap-1 text-[13px] font-[440] leading-4 tracking-[-0.04px]">
         <Show when={props.providerID}>
           {(providerID) => <ProviderIcon id={providerID()} class="text-v2-icon-icon-faint" aria-hidden="true" />}
         </Show>
-        <span class="truncate" title={props.label}>
-          {props.label}
+        <span class="flex min-w-0 items-center gap-1.5">
+          <span class="truncate" title={props.label}>
+            {props.label}
+          </span>
+          <Show when={props.variant && props.variant !== "default" ? props.variant : undefined}>
+            {(variant) => (
+              <>
+                <span class="flex size-1.5 shrink-0 items-center justify-center" aria-hidden="true">
+                  <span class="size-[2.25px] rounded-full bg-current" />
+                </span>
+                <span data-slot="session-timeline-notice-variant" class="shrink-0 capitalize">
+                  {variant()}
+                </span>
+              </>
+            )}
+          </Show>
         </span>
       </span>
-      <span class="h-px min-w-0 flex-1 bg-v2-border-border-base" />
+      <span class="h-px min-w-0 flex-1 bg-v2-border-border-strong" />
     </div>
   )
 }
@@ -974,6 +988,7 @@ function MessageTimelineView(
             ?.find((item) => item.providerID === message.model.providerID && item.id === message.model.id)
           return {
             providerID: message.model.providerID,
+            variant: message.model.variant,
             label: language.t("session.timeline.notice.modelSwitched", { model: info?.name ?? message.model.id }),
           }
         })
@@ -1004,7 +1019,11 @@ function MessageTimelineView(
                   data-slot="session-timeline-notice"
                   class={`w-full py-2 ${turnPadding()}`}
                 >
-                  <TimelineSeparator label={model().label} providerID={model().providerID} />
+                  <TimelineSeparator
+                    label={model().label}
+                    providerID={model().providerID}
+                    variant={model().variant}
+                  />
                 </div>
               )}
             </Show>

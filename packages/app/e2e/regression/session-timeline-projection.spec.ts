@@ -138,7 +138,7 @@ test.describe("session timeline projection", () => {
           id: "msg_model_fast_nano",
           type: "model-switched",
           time: { created: 1700000000000 },
-          model: { providerID: "company-gateway", id: "fast-nano" },
+          model: { providerID: "company-gateway", id: "fast-nano", variant: "xhigh" },
         },
         {
           id: "msg_model_long_context",
@@ -155,10 +155,12 @@ test.describe("session timeline projection", () => {
     const longNotice = page.locator('[data-slot="session-timeline-notice"]').filter({ hasText: longName })
     await expect(shortNotice).toBeVisible()
     await expect(shortNotice.getByText(`Switched to ${shortName}`, { exact: true })).toBeVisible()
+    await expect(shortNotice.locator('[data-slot="session-timeline-notice-variant"]')).toHaveText("xhigh")
     await expect(page.getByText("fast-nano", { exact: true })).toHaveCount(0)
     await expect(shortNotice.locator('[data-component="provider-icon"]')).toBeVisible()
     await expect(longNotice).toBeVisible()
     await expect(longNotice.locator('[data-component="provider-icon"]')).toBeVisible()
+    await expect(longNotice.locator('[data-slot="session-timeline-notice-variant"]')).toHaveCount(0)
     await expect(longNotice.locator("[title]")).toHaveAttribute("title", `Switched to ${longName}`)
     await expect.poll(() => longNotice.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
   })
