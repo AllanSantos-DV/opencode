@@ -149,7 +149,18 @@ export function fromPromise(plugin: Plugin) {
           },
           command: {
             list: adaptApiMethod(CommandEndpoints["command.list"], host.command.list),
-            transform: transform(host.command),
+            transform: (callback) =>
+              register(
+                host.command.transform((draft) =>
+                  callback({
+                    add: (definition) =>
+                      draft.add({
+                        ...definition,
+                        run: (input) => Effect.promise(() => definition.run(input)),
+                      }),
+                  }),
+                ),
+              ),
             reload: () => run(host.command.reload()),
           },
           event: {

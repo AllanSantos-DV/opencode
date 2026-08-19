@@ -3,6 +3,9 @@ export * as ConfigCommandPlugin from "./command.js"
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Info, type Entry } from "@opencode-ai/schema/config"
 import { ConfigCommand } from "@opencode-ai/schema/config/command"
+import { Agent } from "@opencode-ai/schema/agent"
+import { Model } from "@opencode-ai/schema/model"
+import { Provider } from "@opencode-ai/schema/provider"
 import path from "path"
 import { Effect, Option, Schema, Stream } from "effect"
 import { Command } from "../../command.js"
@@ -17,6 +20,7 @@ export const Plugin = define({
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const fs = yield* FSUtil.Service
+    const commands = yield* Command.Service
     const load = Effect.fn("ConfigCommandPlugin.load")(function* () {
       return yield* Effect.forEach(yield* config.entries(), (entry) => {
         if (entry.type === "document") return Effect.succeed([{ commands: entry.info.commands }])
@@ -50,18 +54,18 @@ export const Plugin = define({
       Effect.forkScoped({ startImmediately: true }),
     )
     loaded.documents = yield* load()
-    yield* ctx.command.transform((draft) => {
+    yield* commands.transform((draft) => {
       for (const document of loaded.documents) {
         for (const [name, command] of Object.entries(document.commands ?? {})) {
           draft.update(name, (item) => {
             item.template = command.template
             if (command.description !== undefined) item.description = command.description
-            if (command.agent !== undefined) item.agent = command.agent
+            if (command.agent !== undefined) item.agent = Agent.ID.make(command.agent)
             if (command.model !== undefined)
               item.model = {
-                id: command.model.model,
-                providerID: command.model.providerID,
-                ...(command.model.variant === undefined ? {} : { variant: command.model.variant }),
+                id: Model.ID.make(command.model.model),
+                providerID: Provider.ID.make(command.model.providerID),
+                ...(command.model.variant === undefined ? {} : { variant: Model.VariantID.make(command.model.variant) }),
               }
             if (command.subtask !== undefined) item.subtask = command.subtask
           })

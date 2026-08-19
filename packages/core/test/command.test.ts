@@ -7,6 +7,7 @@ import { Location } from "@opencode-ai/core/location"
 import { MCP } from "@opencode-ai/core/mcp/index"
 import { Model } from "@opencode-ai/core/model"
 import { Provider } from "@opencode-ai/core/provider"
+import { Session } from "@opencode-ai/schema/session"
 import { emptyConfigLayer, emptyMcpLayer, testLocationLayer } from "./fixture/mcp"
 import { testEffect } from "./lib/effect"
 
@@ -19,6 +20,27 @@ const it = testEffect(
 )
 
 describe("Command", () => {
+  it.effect("registers and executes callback commands", () =>
+    Effect.gen(function* () {
+      const command = yield* Command.Service
+      const calls: Command.Invocation[] = []
+      yield* command.transform((draft) => {
+        draft.add({
+          name: "goal",
+          description: "Manage the session goal",
+          run: (input) => Effect.sync(() => calls.push(input)),
+        })
+      })
+
+      expect(yield* command.get("goal")).toEqual(
+        Command.Info.make({ name: "goal", template: "", description: "Manage the session goal" }),
+      )
+      const invocation = { sessionID: Session.ID.make("ses_test"), arguments: "ship it", delivery: "steer" as const }
+      yield* command.execute({ name: "goal", invocation })
+      expect(calls).toEqual([invocation])
+    }),
+  )
+
   it.effect("applies command transforms and preserves later overrides", () =>
     Effect.gen(function* () {
       const command = yield* Command.Service

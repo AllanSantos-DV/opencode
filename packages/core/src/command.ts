@@ -3,6 +3,8 @@ export * as Command from "./command.js"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { Context, Effect, Layer, Schema, Types } from "effect"
 import { Command } from "@opencode-ai/schema/command"
+import type { Session } from "@opencode-ai/schema/session"
+import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import { State } from "./state.js"
 import { MCP } from "./mcp/index.js"
 import { Bus } from "./bus.js"
@@ -21,8 +23,21 @@ export type Evaluation = {
   readonly text: string
 }
 
+export interface Invocation {
+  readonly sessionID: Session.ID
+  readonly arguments: string
+  readonly delivery: SessionInbox.Delivery
+}
+
+export interface Definition {
+  readonly name: string
+  readonly description?: string
+  readonly run: (input: Invocation) => Effect.Effect<void>
+}
+
 export type Data = {
   commands: Map<string, Types.DeepMutable<Info>>
+  callbacks: Map<string, Definition["run"]>
 }
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Command.NotFoundError", {
@@ -38,6 +53,7 @@ export class EvaluationError extends Schema.TaggedError<EvaluationError>()("Comm
 export type Draft = {
   list: () => readonly Info[]
   get: (name: string) => Info | undefined
+  add: (definition: Definition) => void
   update: (name: string, update: (command: Types.DeepMutable<Info>) => void) => void
   remove: (name: string) => void
 }
@@ -45,6 +61,7 @@ export type Draft = {
 export interface Interface extends State.Transformable<Draft> {
   readonly get: (name: string) => Effect.Effect<Info | undefined>
   readonly list: () => Effect.Effect<Info[]>
+  readonly execute: (input: { readonly name: string; readonly invocation: Invocation }) => Effect.Effect<void, NotFoundError>
   readonly evaluate: (input: {
     readonly name: string
     readonly arguments?: string
@@ -65,10 +82,17 @@ export const layer = (options?: ShellSelect.Options) =>
       const global = yield* Global.Service
       const state = State.create<Data, Draft>({
         name: "command",
-        initial: () => ({ commands: new Map() }),
+        initial: () => ({ commands: new Map(), callbacks: new Map() }),
         draft: (draft) => ({
           list: () => Array.from(draft.commands.values()) as Info[],
           get: (name) => draft.commands.get(name),
+          add: (definition) => {
+            draft.commands.set(
+              definition.name,
+              Info.make({ name: definition.name, template: "", description: definition.description }),
+            )
+            draft.callbacks.set(definition.name, definition.run)
+          },
           update: (name, update) => {
             const current = draft.commands.get(name) ?? ({ name, template: "" } as Types.DeepMutable<Info>)
             if (!draft.commands.has(name)) draft.commands.set(name, current)
@@ -77,6 +101,7 @@ export const layer = (options?: ShellSelect.Options) =>
           },
           remove: (name) => {
             draft.commands.delete(name)
+            draft.callbacks.delete(name)
           },
         }),
         finalize: () => bus.publish(Command.Event.Updated, {}).pipe(Effect.asVoid),
@@ -104,6 +129,11 @@ export const layer = (options?: ShellSelect.Options) =>
           const commands = Array.from(state.get().commands.values()) as Info[]
           const names = new Set(commands.map((command) => command.name))
           return [...commands, ...(yield* mcpCommands()).filter((command) => !names.has(command.name))]
+        }),
+        execute: Effect.fn("Command.execute")(function* (input) {
+          const callback = state.get().callbacks.get(input.name)
+          if (callback) return yield* callback(input.invocation)
+          return yield* new NotFoundError({ command: input.name, message: `Command not found: ${input.name}` })
         }),
         evaluate: Effect.fn("Command.evaluate")(function* (input) {
           const command = staticCommand(input.name)

@@ -3,14 +3,16 @@ export * as CommandPlugin from "./command.js"
 import { define } from "@opencode-ai/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Location } from "../location.js"
+import { Command } from "../command.js"
 import PROMPT_INITIALIZE from "./command/initialize.txt"
 import PROMPT_REVIEW from "./command/review.txt"
 
 export const Plugin = define({
   id: "opencode.command",
-  effect: Effect.fn(function* (ctx) {
+  effect: Effect.fn(function* () {
     const location = yield* Location.Service
-    yield* ctx.command.transform((draft) => {
+    const commands = yield* Command.Service
+    yield* commands.transform((draft) => {
       draft.update("init", (command) => {
         command.template = PROMPT_INITIALIZE.replace("${path}", location.project.directory)
         command.description = "guided AGENTS.md setup"
