@@ -145,7 +145,7 @@ export function apply(state: SessionFoldState, event: DurableSessionEvent): Sess
     case "session.execution.succeeded":
     case "session.execution.failed":
     case "session.execution.interrupted":
-      return { ...updateActiveAssistant(current, (message) => ({ ...message, retry: undefined })), active: "idle" }
+      return { ...updateActiveAssistant(current, (message) => without(message, "retry")), active: "idle" }
     case "session.instructions.updated":
       if (event.data.text === undefined) return current
       return append(current, {
@@ -205,19 +205,15 @@ export function apply(state: SessionFoldState, event: DurableSessionEvent): Sess
       const existing = state.messages.some((message) => message.id === event.data.assistantMessageID)
       if (existing)
         return updateAssistant(current, event.data.assistantMessageID, (message) => ({
-          ...message,
+          ...without(message, "retry", "error", "finish"),
           agent: event.data.agent,
           model: event.data.model,
-          retry: undefined,
-          error: undefined,
-          finish: undefined,
-          time: { ...message.time, completed: undefined },
+          time: without(message.time, "completed"),
           snapshot: event.data.snapshot ? { ...message.snapshot, start: event.data.snapshot } : message.snapshot,
         }))
       return append(
         updateActiveAssistant(current, (message) => ({
-          ...message,
-          retry: undefined,
+          ...without(message, "retry"),
           time: { ...message.time, completed: event.created },
         })),
         {
@@ -251,10 +247,9 @@ export function apply(state: SessionFoldState, event: DurableSessionEvent): Sess
       )
     case "session.step.failed": {
       const failed = updateAssistant(current, event.data.assistantMessageID, (message) => ({
-        ...message,
+        ...without(message, "retry"),
         finish: "error",
         error: event.data.error,
-        retry: undefined,
         cost: event.data.cost ?? message.cost,
         tokens: event.data.tokens ?? message.tokens,
         time: { ...message.time, completed: event.created },
@@ -272,11 +267,10 @@ export function apply(state: SessionFoldState, event: DurableSessionEvent): Sess
         content: insertOrdinal(message.content, "text", event.data.ordinal, { type: "text", text: "" }),
       }))
     case "session.text.ended":
-      return updateContent(current, event.data.assistantMessageID, "text", event.data.ordinal, (part) => ({
-        ...part,
-        text: event.data.text,
-        state: event.data.state,
-      }))
+      return updateContent(current, event.data.assistantMessageID, "text", event.data.ordinal, (part) => {
+        const next = { ...part, text: event.data.text }
+        return event.data.state === undefined ? without(next, "state") : { ...next, state: event.data.state }
+      })
     case "session.reasoning.started":
       return updateAssistant(current, event.data.assistantMessageID, (message) => ({
         ...message,
@@ -440,12 +434,12 @@ export function apply(state: SessionFoldState, event: DurableSessionEvent): Sess
     case "session.revert.cleared":
       return {
         ...current,
-        session: { ...state.session, revert: undefined, time: { ...state.session.time, updated: event.created } },
+        session: without({ ...state.session, time: { ...state.session.time, updated: event.created } }, "revert"),
       }
     case "session.revert.committed":
       return {
         ...current,
-        session: { ...state.session, revert: undefined, time: { ...state.session.time, updated: event.created } },
+        session: without({ ...state.session, time: { ...state.session.time, updated: event.created } }, "revert"),
         messages: state.messages.filter((message) => message.id < event.data.to),
         inbox: state.inbox.filter((item) => item.id < event.data.to),
       }
@@ -454,6 +448,15 @@ export function apply(state: SessionFoldState, event: DurableSessionEvent): Sess
 
 function messageID(eventID: string) {
   return eventID.replace(/^evt_/, "msg_")
+}
+
+// Clearing a field must delete the key, not assign undefined: fold state
+// round-trips through JSON snapshots, which cannot represent undefined-valued
+// keys, so replay and fromSnapshot must agree on key presence.
+function without<T extends object, K extends keyof T>(value: T, ...keys: ReadonlyArray<K>): Omit<T, K> {
+  const next = { ...value }
+  for (const key of keys) delete next[key]
+  return next
 }
 
 export function messageFromInbox(item: SessionInboxInfo, created = item.timeCreated): SessionMessageInfo | undefined {
