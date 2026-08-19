@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { Engine } from "../src/solid/engine/engine"
-import { FakeSessionServer, until, userMessages } from "./fixture/sync-engine"
+import { FakeSessionServer, reconnectGate, until, userMessages } from "./fixture/sync-engine"
 
 describe("session sync engine laws", () => {
   test("1. idempotency: lost responses converge to one admitted message", async () => {
@@ -93,21 +93,21 @@ describe("session sync engine laws", () => {
 
   test("7. lossy history: reconnect without retained events recovers via snapshot", async () => {
     const server = new FakeSessionServer("session-lossy")
-    let release: (() => void) | undefined
+    const gate = reconnectGate()
     const engine = await Engine.createSessionEngine(server.sessionID, server, {
       now: () => server.time,
-      reconnect: () => new Promise<void>((resolve) => (release = resolve)),
+      reconnect: gate.reconnect,
     })
     engine.submit({ id: "msg_1", text: "first" })
     await engine.settled()
 
     server.cutConnections()
-    await until(() => release !== undefined)
+    await until(gate.holding)
     // While disconnected the session advances, then history is dropped: the
     // reconnect cursor cannot be replayed and must recover via snapshot.
     await server.submit({ id: "msg_2", sessionID: server.sessionID, request: { text: "second" } })
     server.prune()
-    release!()
+    gate.release()
 
     await until(() => engine.view().seq === 2)
     expect(engine.view()).toEqual(server.truth())
@@ -139,6 +139,31 @@ describe("session sync engine laws", () => {
     await engine.ready()
 
     expect(attempts).toBe(2)
+    expect(engine.view()).toEqual(server.truth())
+    engine.stop()
+  })
+
+  test("9. outage recovery: failed recovery snapshots retry until the server returns", async () => {
+    const server = new FakeSessionServer("session-outage")
+    const gate = reconnectGate()
+    const engine = await Engine.createSessionEngine(server.sessionID, server, {
+      now: () => server.time,
+      reconnect: gate.reconnect,
+    })
+    engine.submit({ id: "msg_1", text: "first" })
+    await engine.settled()
+
+    server.cutConnections()
+    await until(gate.holding)
+    // A server restart while disconnected: history is gone, and the server
+    // stays unreachable for the first snapshot attempts of the recovery.
+    await server.submit({ id: "msg_2", sessionID: server.sessionID, request: { text: "second" } })
+    server.prune()
+    server.faults.loseSnapshots = 3
+    gate.release()
+
+    await until(() => engine.view().seq === 2)
+    expect(server.faults.loseSnapshots).toBe(0)
     expect(engine.view()).toEqual(server.truth())
     engine.stop()
   })

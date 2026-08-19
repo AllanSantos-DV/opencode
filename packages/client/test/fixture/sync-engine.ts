@@ -9,6 +9,7 @@ export class FakeSessionServer implements Engine.SessionTransport {
   readonly faults = {
     loseRequests: 0,
     loseResponses: 0,
+    loseSnapshots: 0,
     reject: 0,
     latency: 0,
   }
@@ -27,6 +28,10 @@ export class FakeSessionServer implements Engine.SessionTransport {
   async snapshot(sessionID: string) {
     await this.pause()
     this.assertSession(sessionID)
+    if (this.faults.loseSnapshots > 0) {
+      this.faults.loseSnapshots--
+      throw new Error("snapshot lost")
+    }
     return this.snapshotValue()
   }
 
@@ -125,6 +130,28 @@ export class FakeSessionServer implements Engine.SessionTransport {
 
   private async pause() {
     for (let step = 0; step < this.faults.latency; step++) await Promise.resolve()
+  }
+}
+
+/**
+ * Reconnect option that holds the engine's first reconnect until released,
+ * so a test can advance the server "while disconnected". Later reconnects
+ * pass through instantly.
+ */
+export function reconnectGate() {
+  let open = false
+  let release: (() => void) | undefined
+  return {
+    reconnect: () =>
+      new Promise<void>((resolve) => {
+        if (open) return resolve()
+        release = () => {
+          open = true
+          resolve()
+        }
+      }),
+    holding: () => release !== undefined,
+    release: () => release!(),
   }
 }
 

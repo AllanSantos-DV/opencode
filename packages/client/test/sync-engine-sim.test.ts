@@ -31,6 +31,8 @@ describe("session sync engine simulation", () => {
           server.faults.loseRequests += 1 + Math.floor(random() * 2)
         } else if (roll < 0.8) {
           server.faults.reject++
+        } else if (roll < 0.87) {
+          server.faults.loseSnapshots++
         } else {
           server.faults.latency = Math.floor(random() * 6)
         }
@@ -40,6 +42,7 @@ describe("session sync engine simulation", () => {
       server.faults.latency = 0
       server.faults.loseRequests = 0
       server.faults.loseResponses = 0
+      server.faults.loseSnapshots = 0
       server.faults.reject = 0
       for (let attempt = 0; attempt < 100; attempt++) {
         server.cutConnections()

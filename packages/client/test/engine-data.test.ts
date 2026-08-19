@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { createRoot } from "solid-js"
 import { Engine } from "../src/solid/engine/engine"
-import { createEngineTransport } from "../src/solid/engine-data"
+import { createEngineData, createEngineTransport } from "../src/solid/engine-data"
 import { FakeSessionServer } from "./fixture/sync-engine"
 
 describe("engine data transport", () => {
@@ -75,6 +76,33 @@ describe("engine data transport", () => {
         delivery: "queue",
       },
     ])
+  })
+
+  test("a failed initial attach does not poison the session cache", async () => {
+    const server = new FakeSessionServer("session-attach-retry")
+    server.faults.loseSnapshots = 1
+    const api = {
+      session: {
+        snapshot: (input: { sessionID: string }) => server.snapshot(input.sessionID),
+        log: (input: { sessionID: string; after: number }) => server.stream(input.sessionID, input.after),
+        prompt: () => Promise.reject(new Error("unused")),
+      },
+    }
+    await createRoot(async (dispose) => {
+      const data = createEngineData({
+        api: () => api as never,
+        directory: "/workspace",
+        event: { on: () => () => {}, listen: () => () => {} },
+      })
+
+      // The server is down when the session first opens…
+      await expect(data.session.sync(server.sessionID)).rejects.toThrow("snapshot lost")
+      // …and the next sync attaches with a fresh engine instead of a cached rejection.
+      await data.session.sync(server.sessionID)
+
+      expect(data.session.get(server.sessionID)?.id).toBe(server.sessionID)
+      dispose()
+    })
   })
 
   test("translates generated typed failures", async () => {
