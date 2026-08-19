@@ -8,6 +8,14 @@ import { Engine } from "./engine/engine"
 
 type SessionApi = Pick<OpenCodeClient["session"], "snapshot" | "log" | "prompt">
 
+// Solid's setStore path types reject readonly arrays. The store only ever
+// holds deep clones it owns, so a mutable mirror of the engine view is safe.
+type StoreSessionView = {
+  -readonly [Key in keyof Engine.SessionView]: Engine.SessionView[Key] extends ReadonlyArray<infer Item>
+    ? Item[]
+    : Engine.SessionView[Key]
+}
+
 const ambientSessionEvents = new Set<OpenCodeEvent["type"]>([
   "session.created",
   "session.deleted",
@@ -60,7 +68,7 @@ export function createEngineData(config: CreateDataInput) {
       },
     },
   })
-  const [views, setViews] = createStore<Record<string, Engine.SessionView>>({})
+  const [views, setViews] = createStore<Record<string, StoreSessionView>>({})
   const engines = new Map<string, Promise<Engine.SessionEngine>>()
   const families = new Set<string>()
   const invalidated = new Set<string>()
@@ -69,15 +77,54 @@ export function createEngineData(config: CreateDataInput) {
   const transport = createEngineTransport(() => config.api().session)
   let connected = false
 
+  // Reconcile mutates the store's backing tree in place, so engine state must
+  // never be aliased into it, and every clone must appear at exactly one store
+  // path (reconcile merges nodes in place, which corrupts shared clones). The
+  // fold is a persistent structure — successive views share references for
+  // everything unchanged — so diffing the previous engine view by identity and
+  // deep-cloning only the changed subtrees keeps the boundary while avoiding
+  // the full-view structuredClone per event that dominated the streaming path.
+  const rendered = new Map<string, Engine.SessionView>()
+  // Engine data is plain JSON, so a recursive copy beats structuredClone's
+  // serialization overhead on the small per-event subtrees cloned below.
+  const clone = <T,>(value: T): T => {
+    if (value === null || typeof value !== "object") return value
+    if (Array.isArray(value)) return value.map(clone) as T
+    const copy: Record<string, unknown> = {}
+    for (const key in value) copy[key] = clone(value[key as keyof T])
+    return copy as T
+  }
   const update = (sessionID: string, view: Engine.SessionView) => {
+    const previous = rendered.get(sessionID)
+    rendered.set(sessionID, view)
     batch(() => {
-      setViews(sessionID, reconcile(structuredClone(view)))
-      const current = legacy.session.get(sessionID)
-      if (!current || current.time.updated <= view.session.time.updated) {
-        legacy.session.remember(structuredClone(view.session))
+      if (!previous || !views[sessionID]) setViews(sessionID, clone(view) as StoreSessionView)
+      else {
+        if (view.session !== previous.session) setViews(sessionID, "session", reconcile(clone(view.session)))
+        if (view.children !== previous.children)
+          setViews(sessionID, "children", reconcile(clone(view.children) as StoreSessionView["children"]))
+        if (view.inbox !== previous.inbox)
+          setViews(sessionID, "inbox", reconcile(clone(view.inbox) as StoreSessionView["inbox"]))
+        if (view.pending !== previous.pending)
+          setViews(sessionID, "pending", reconcile(clone(view.pending) as StoreSessionView["pending"]))
+        if (view.seq !== previous.seq) setViews(sessionID, "seq", view.seq)
+        if (view.active !== previous.active) setViews(sessionID, "active", view.active)
+        if (view.deleted !== previous.deleted) setViews(sessionID, "deleted", view.deleted)
+        if (view.messages.length < previous.messages.length)
+          setViews(sessionID, "messages", reconcile(clone(view.messages) as StoreSessionView["messages"]))
+        else
+          for (let index = 0; index < view.messages.length; index++)
+            if (view.messages[index] !== previous.messages[index])
+              setViews(sessionID, "messages", index, reconcile(clone(view.messages[index])))
       }
-      if (families.has(sessionID)) {
-        view.children.forEach((child) => legacy.session.remember(structuredClone(child)))
+      if (view.session !== previous?.session) {
+        const current = legacy.session.get(sessionID)
+        if (!current || current.time.updated <= view.session.time.updated) {
+          legacy.session.remember(clone(view.session))
+        }
+      }
+      if (families.has(sessionID) && view.children !== previous?.children) {
+        view.children.forEach((child) => legacy.session.remember(clone(child)))
       }
     })
   }

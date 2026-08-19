@@ -283,28 +283,26 @@ export async function createSessionEngine(
 }
 
 export function render(state: Pick<EngineState, "folded" | "outbox" | "overlay">): SessionView {
-  const messageIDs = new Set(state.folded.messages.map((message) => message.id))
-  const pending = [
-    ...state.folded.inbox,
-    ...state.outbox.map(
-      (intent): SessionInboxInfo => ({
-        id: intent.id,
-        sessionID: state.folded.session.id,
-        timeCreated: intent.created,
-        ...intent.item,
-      }),
-    ),
-  ]
+  // Render runs per ephemeral event, so preserve references for everything the
+  // event did not touch: the adapter diffs consecutive views by identity to
+  // decide what to write into the reactive store.
+  const pending =
+    state.outbox.length === 0
+      ? state.folded.inbox
+      : [
+          ...state.folded.inbox,
+          ...state.outbox.map(
+            (intent): SessionInboxInfo => ({
+              id: intent.id,
+              sessionID: state.folded.session.id,
+              timeCreated: intent.created,
+              ...intent.item,
+            }),
+          ),
+        ]
+  const appended = pendingMessages(state.folded, pending)
   const messages = applyOverlayToMessages(
-    [
-      ...state.folded.messages,
-      ...pending.flatMap((item): ReadonlyArray<SessionMessageInfo> => {
-        if (item.type !== "compaction" && item.delivery === "queue") return []
-        if (messageIDs.has(item.id)) return []
-        const message = SessionFold.messageFromInbox(item)
-        return message ? [message] : []
-      }),
-    ],
+    appended.length === 0 ? state.folded.messages : [...state.folded.messages, ...appended],
     state.overlay,
   )
   const usage = state.overlay.get("usage")
@@ -317,6 +315,17 @@ export function render(state: Pick<EngineState, "folded" | "outbox" | "overlay">
     messages,
     pending,
   }
+}
+
+function pendingMessages(folded: SessionFoldState, pending: ReadonlyArray<SessionInboxInfo>) {
+  if (pending.length === 0) return []
+  const messageIDs = new Set(folded.messages.map((message) => message.id))
+  return pending.flatMap((item): ReadonlyArray<SessionMessageInfo> => {
+    if (item.type !== "compaction" && item.delivery === "queue") return []
+    if (messageIDs.has(item.id)) return []
+    const message = SessionFold.messageFromInbox(item)
+    return message ? [message] : []
+  })
 }
 
 function applyOverlay(overlay: Overlay, event: EphemeralSessionEvent): Overlay {
@@ -401,12 +410,24 @@ function removeOverlay(overlay: Overlay, key: string): Overlay {
 }
 
 function applyOverlayToMessages(messages: ReadonlyArray<SessionMessageInfo>, overlay: Overlay) {
+  if (overlay.size === 0) return messages
+  // Part keys embed the message ID as the second segment; remap only messages
+  // the overlay actually touches so everything else keeps its identity.
+  const touched = new Set<string>()
+  let compacting = false
+  overlay.forEach((_, key) => {
+    if (key === "compaction") compacting = true
+    if (key === "compaction" || key === "usage") return
+    touched.add(key.split(":")[1] ?? "")
+  })
+  if (touched.size === 0 && !compacting) return messages
   return messages.map((message): SessionMessageInfo => {
     if (message.type === "compaction" && message.status === "running") {
+      if (!compacting) return message
       const entry = overlay.get("compaction")
       return entry?.type === "compaction" ? { ...message, summary: message.summary + entry.value } : message
     }
-    if (message.type !== "assistant") return message
+    if (message.type !== "assistant" || !touched.has(message.id)) return message
     const ordinals = { text: 0, reasoning: 0 }
     const content = message.content.map((part) => {
       if (part.type === "text") {
