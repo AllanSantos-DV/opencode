@@ -1,7 +1,7 @@
 import type { ToolDefinition } from "@opencode-ai/ai"
 import { Tool } from "@opencode-ai/schema/tool"
 import type { StandardJSONSchemaV1, StandardSchemaV1 } from "@standard-schema/spec"
-import { Effect, JsonSchema, Schema } from "effect"
+import { Effect, JsonSchema, Schema, SchemaAST } from "effect"
 
 export const definition = (tool: Tool.Info<any, any>): ToolDefinition => ({
   name: effectiveName(tool),
@@ -32,22 +32,26 @@ export const execute = (tool: Tool.Info<any, any>, input: unknown, context: Tool
   })
 
 const decodeInput = (schema: Tool.ValueSchema<any>, value: unknown) => {
-  if (Schema.isSchema(schema))
+  if (Schema.isSchema(schema)) {
+    if (isForeignSchema(schema)) return foreignSchemaPassthrough(value)
     return Schema.decodeUnknownEffect(schema)(value).pipe(
       Effect.mapError((error) => new Tool.Error({ message: `Invalid tool input: ${error.message}` })),
     )
+  }
   if (isStandardSchema(schema)) return validateStandard(schema, value, "Invalid tool input")
   return Effect.succeed(value)
 }
 
 const encodeOutput = (schema: Tool.ValueSchema<any>, value: unknown) => {
-  if (Schema.isSchema(schema))
+  if (Schema.isSchema(schema)) {
+    if (isForeignSchema(schema)) return foreignSchemaPassthrough(value)
     return Schema.encodeEffect(schema)(value).pipe(
       Effect.mapError(
         (error) =>
           new Tool.Error({ message: `Tool returned an invalid value for its output schema: ${error.message}` }),
       ),
     )
+  }
   if (isStandardSchema(schema))
     return validateStandard(schema, value, "Tool returned an invalid value for its output schema")
   return Schema.decodeUnknownEffect(Schema.Json)(value).pipe(
@@ -56,6 +60,23 @@ const encodeOutput = (schema: Tool.ValueSchema<any>, value: unknown) => {
     ),
   )
 }
+
+// A schema created by a different copy of `effect` (for example one loaded from a
+// plugin's own node_modules) still satisfies `Schema.isSchema` because the type
+// identifier is a shared string, but it cannot be interpreted by this instance:
+// schema parsing relies on per-instance sentinels and class identity, so checks
+// false-fail on valid values and branded types die as defects. AST classes are plain
+// classes, so an instanceof test against this instance's AST base distinguishes the
+// two reliably.
+const isForeignSchema = (schema: Schema.Top) => !(schema.ast instanceof SchemaAST.Base)
+
+// Current @opencode-ai/plugin versions convert plugin schemas to Standard Schema
+// wrappers before registration, keeping validation in the authoring instance. For
+// plugins built against older versions, skip validation rather than misvalidate.
+const foreignSchemaPassthrough = (value: unknown) =>
+  Effect.logWarning(
+    "Tool schema was created by a different `effect` module instance; skipping validation. Update the plugin's @opencode-ai/plugin dependency to restore validation.",
+  ).pipe(Effect.as(value))
 
 const isStandardSchema = (
   schema: Tool.ValueSchema<any>,
@@ -78,10 +99,18 @@ const validateStandard = (
         : pending
     if (result.issues)
       return yield* new Tool.Error({
-        message: `${prefix}: ${result.issues.map((issue) => issue.message).join(", ")}`,
+        message: `${prefix}: ${result.issues.map(standardIssueText).join(", ")}`,
       })
     return result.value
   })
+
+const standardIssueText = (issue: StandardSchemaV1.Issue) => {
+  if (issue.path === undefined || issue.path.length === 0) return issue.message
+  const segments = issue.path.map((segment) =>
+    typeof segment === "object" && segment !== null && "key" in segment ? segment.key : segment,
+  )
+  return `${issue.message} at ${JSON.stringify(segments)}`
+}
 
 const standardFailure = (prefix: string, error: unknown) =>
   new Tool.Error({ message: `${prefix}: ${error instanceof Error ? error.message : String(error)}` })

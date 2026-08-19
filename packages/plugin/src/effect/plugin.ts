@@ -1,5 +1,6 @@
 import type { PluginApi } from "@opencode-ai/client/effect/api"
 import type { Effect, Scope } from "effect"
+import { instanceSafeTool } from "./tool-schema.js"
 import type { PluginOptions } from "../options.js"
 import type { App } from "../app.js"
 import type { AgentDomain } from "./agent.js"
@@ -41,6 +42,23 @@ export interface Plugin<R = Scope.Scope> {
   readonly effect: (context: Context) => Effect.Effect<void, never, R>
 }
 
-export function define<R = Scope.Scope>(plugin: Plugin<R>) {
-  return plugin
+export function define<R = Scope.Scope>(plugin: Plugin<R>): Plugin<R> {
+  return {
+    ...plugin,
+    effect: (context) => plugin.effect(instanceSafeContext(context)),
+  }
+}
+
+// Tool schemas cross from the plugin's module world into the host at `draft.add`;
+// convert them while authoring-instance code is still on the stack so the host never
+// interprets a foreign Effect schema. See `instanceSafeTool`.
+function instanceSafeContext(context: Context): Context {
+  return {
+    ...context,
+    tool: {
+      ...context.tool,
+      transform: (callback) =>
+        context.tool.transform((draft) => callback({ add: (tool) => draft.add(instanceSafeTool(tool)) })),
+    },
+  }
 }
