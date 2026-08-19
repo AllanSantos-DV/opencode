@@ -10,10 +10,22 @@ type SessionApi = Pick<OpenCodeClient["session"], "snapshot" | "log" | "prompt">
 
 // Solid's setStore path types reject readonly arrays. The store only ever
 // holds deep clones it owns, so a mutable mirror of the engine view is safe.
+// Shallow on purpose: a recursive mutable type either flattens tuples or
+// exceeds TS instantiation depth on the recursive metadata JSON types.
 type StoreSessionView = {
   -readonly [Key in keyof Engine.SessionView]: Engine.SessionView[Key] extends ReadonlyArray<infer Item>
     ? Item[]
     : Engine.SessionView[Key]
+}
+
+// Engine data is plain JSON, so a recursive copy beats structuredClone's
+// serialization overhead on the small per-event subtrees the adapter clones.
+function clone<T>(value: T): T {
+  if (value === null || typeof value !== "object") return value
+  if (Array.isArray(value)) return value.map(clone) as T
+  const copy: Record<string, unknown> = {}
+  for (const key in value) copy[key] = clone(value[key as keyof T])
+  return copy as T
 }
 
 const ambientSessionEvents = new Set<OpenCodeEvent["type"]>([
@@ -78,29 +90,22 @@ export function createEngineData(config: CreateDataInput) {
   let connected = false
 
   // Reconcile mutates the store's backing tree in place, so engine state must
-  // never be aliased into it, and every clone must appear at exactly one store
-  // path (reconcile merges nodes in place, which corrupts shared clones). The
-  // fold is a persistent structure — successive views share references for
-  // everything unchanged — so diffing the previous engine view by identity and
-  // deep-cloning only the changed subtrees keeps the boundary while avoiding
-  // the full-view structuredClone per event that dominated the streaming path.
+  // never be aliased into it and every clone must appear at exactly one store
+  // path. The fold is a persistent structure — successive views share
+  // references for everything unchanged — so diff the previous view by
+  // identity and deep-clone only the changed subtrees. (A full-view
+  // structuredClone per publish dominated the streaming hot path.) New
+  // SessionView fields must be diffed here or they never propagate past the
+  // first publish.
   const rendered = new Map<string, Engine.SessionView>()
-  // Engine data is plain JSON, so a recursive copy beats structuredClone's
-  // serialization overhead on the small per-event subtrees cloned below.
-  const clone = <T,>(value: T): T => {
-    if (value === null || typeof value !== "object") return value
-    if (Array.isArray(value)) return value.map(clone) as T
-    const copy: Record<string, unknown> = {}
-    for (const key in value) copy[key] = clone(value[key as keyof T])
-    return copy as T
-  }
   const update = (sessionID: string, view: Engine.SessionView) => {
     const previous = rendered.get(sessionID)
     rendered.set(sessionID, view)
+    const sessionChanged = view.session !== previous?.session
     batch(() => {
-      if (!previous || !views[sessionID]) setViews(sessionID, clone(view) as StoreSessionView)
+      if (!previous) setViews(sessionID, clone(view) as StoreSessionView)
       else {
-        if (view.session !== previous.session) setViews(sessionID, "session", reconcile(clone(view.session)))
+        if (sessionChanged) setViews(sessionID, "session", reconcile(clone(view.session)))
         if (view.children !== previous.children)
           setViews(sessionID, "children", reconcile(clone(view.children) as StoreSessionView["children"]))
         if (view.inbox !== previous.inbox)
@@ -110,14 +115,18 @@ export function createEngineData(config: CreateDataInput) {
         if (view.seq !== previous.seq) setViews(sessionID, "seq", view.seq)
         if (view.active !== previous.active) setViews(sessionID, "active", view.active)
         if (view.deleted !== previous.deleted) setViews(sessionID, "deleted", view.deleted)
-        if (view.messages.length < previous.messages.length)
-          setViews(sessionID, "messages", reconcile(clone(view.messages) as StoreSessionView["messages"]))
-        else
-          for (let index = 0; index < view.messages.length; index++)
-            if (view.messages[index] !== previous.messages[index])
-              setViews(sessionID, "messages", index, reconcile(clone(view.messages[index])))
+        if (view.messages !== previous.messages) {
+          // Per-index writes can grow the store array but never shrink it, so
+          // a shorter messages list falls back to a whole-array reconcile.
+          if (view.messages.length < previous.messages.length)
+            setViews(sessionID, "messages", reconcile(clone(view.messages) as StoreSessionView["messages"]))
+          else
+            for (let index = 0; index < view.messages.length; index++)
+              if (view.messages[index] !== previous.messages[index])
+                setViews(sessionID, "messages", index, reconcile(clone(view.messages[index])))
+        }
       }
-      if (view.session !== previous?.session) {
+      if (sessionChanged) {
         const current = legacy.session.get(sessionID)
         if (!current || current.time.updated <= view.session.time.updated) {
           legacy.session.remember(clone(view.session))
@@ -175,7 +184,7 @@ export function createEngineData(config: CreateDataInput) {
         await sync(sessionID)
         if (!options?.children) return
         const view = views[sessionID]
-        view?.children.forEach((child) => legacy.session.remember(structuredClone(unwrap(child))))
+        view?.children.forEach((child) => legacy.session.remember(clone(unwrap(child))))
       },
       invalidate(sessionID: string) {
         invalidated.add(sessionID)

@@ -10,7 +10,7 @@ architecture is not a streaming CPU regression.
 
 ```
 cd packages/client
-bun scripts/bench-session-sync.ts
+bun run bench:sync
 ```
 
 Env knobs: `BENCH_TRANSCRIPT` (messages, default 200), `BENCH_DELTAS`
@@ -48,6 +48,14 @@ Baseline: engine 240µs/delta vs legacy 0.3µs/delta.
 
 Final: 240 → 3.5µs/delta (69×) at 200 messages; 23.6µs/delta at 2000
 messages (remaining cost is the O(n) identity walk, ~10ns/message/delta).
+
+Simplify pass (no benchmark movement, closes paths the scenario misses):
+`render` memoizes its durable base on fold/outbox identity and the
+usage-adjusted session on the usage entry, so identity preservation holds
+even with a live usage overlay or pending steers/outbox items; `publish`
+skips render and notify when folded/outbox/overlay are identity-unchanged
+(synced flips, stale replays). The bench scenario streams with an empty
+outbox and no usage entry, so those paths need the memo caches for cover.
 
 ## Dead ends
 

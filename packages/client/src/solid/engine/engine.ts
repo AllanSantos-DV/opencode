@@ -125,9 +125,14 @@ export async function createSessionEngine(
   const abort = new AbortController()
 
   const publish = (next: EngineState) => {
+    const previous = state
     state = next
-    const view = render(state)
-    listeners.forEach((listener) => listener(view))
+    // Views derive from folded/outbox/overlay only, so synced flips and stale
+    // replays (where the fold returns its input) need no render or notify.
+    if (next.folded !== previous.folded || next.outbox !== previous.outbox || next.overlay !== previous.overlay) {
+      const view = render(state)
+      listeners.forEach((listener) => listener(view))
+    }
     if (state.outbox.length > 0) return
     settled.forEach((resolve) => resolve())
     settled.clear()
@@ -282,38 +287,51 @@ export async function createSessionEngine(
   }
 }
 
+// Render runs per ephemeral event, so everything an event did not touch must
+// keep its reference: the adapter diffs consecutive views by identity to
+// decide what to write into the reactive store. Both caches key on persistent
+// inputs (a fold, outbox, or usage entry keeps its identity until it actually
+// changes), so per-delta renders only reapply the overlay.
 export function render(state: Pick<EngineState, "folded" | "outbox" | "overlay">): SessionView {
-  // Render runs per ephemeral event, so preserve references for everything the
-  // event did not touch: the adapter diffs consecutive views by identity to
-  // decide what to write into the reactive store.
+  const base = renderBase(state.folded, state.outbox)
+  return {
+    ...state.folded,
+    session: usageSession(state.folded, state.overlay.get("usage")),
+    messages: applyOverlayToMessages(base.messages, state.overlay),
+    pending: base.pending,
+  }
+}
+
+const bases = new WeakMap<SessionFoldState, ReturnType<typeof buildBase>>()
+
+function renderBase(folded: SessionFoldState, outbox: EngineState["outbox"]) {
+  const hit = bases.get(folded)
+  if (hit && hit.outbox === outbox) return hit
+  const base = buildBase(folded, outbox)
+  bases.set(folded, base)
+  return base
+}
+
+function buildBase(folded: SessionFoldState, outbox: EngineState["outbox"]) {
   const pending =
-    state.outbox.length === 0
-      ? state.folded.inbox
+    outbox.length === 0
+      ? folded.inbox
       : [
-          ...state.folded.inbox,
-          ...state.outbox.map(
+          ...folded.inbox,
+          ...outbox.map(
             (intent): SessionInboxInfo => ({
               id: intent.id,
-              sessionID: state.folded.session.id,
+              sessionID: folded.session.id,
               timeCreated: intent.created,
               ...intent.item,
             }),
           ),
         ]
-  const appended = pendingMessages(state.folded, pending)
-  const messages = applyOverlayToMessages(
-    appended.length === 0 ? state.folded.messages : [...state.folded.messages, ...appended],
-    state.overlay,
-  )
-  const usage = state.overlay.get("usage")
+  const appended = pendingMessages(folded, pending)
   return {
-    ...state.folded,
-    session:
-      usage?.type === "usage"
-        ? { ...state.folded.session, cost: usage.value.cost, tokens: usage.value.tokens }
-        : state.folded.session,
-    messages,
+    outbox,
     pending,
+    messages: appended.length === 0 ? folded.messages : [...folded.messages, ...appended],
   }
 }
 
@@ -326,6 +344,20 @@ function pendingMessages(folded: SessionFoldState, pending: ReadonlyArray<Sessio
     const message = SessionFold.messageFromInbox(item)
     return message ? [message] : []
   })
+}
+
+const usageSessions = new WeakMap<
+  Extract<OverlayEntry, { type: "usage" }>,
+  { base: SessionFoldState["session"]; session: SessionFoldState["session"] }
+>()
+
+function usageSession(folded: SessionFoldState, entry: OverlayEntry | undefined) {
+  if (entry?.type !== "usage") return folded.session
+  const hit = usageSessions.get(entry)
+  if (hit && hit.base === folded.session) return hit.session
+  const session = { ...folded.session, cost: entry.value.cost, tokens: entry.value.tokens }
+  usageSessions.set(entry, { base: folded.session, session })
+  return session
 }
 
 function applyOverlay(overlay: Overlay, event: EphemeralSessionEvent): Overlay {
@@ -411,14 +443,13 @@ function removeOverlay(overlay: Overlay, key: string): Overlay {
 
 function applyOverlayToMessages(messages: ReadonlyArray<SessionMessageInfo>, overlay: Overlay) {
   if (overlay.size === 0) return messages
-  // Part keys embed the message ID as the second segment; remap only messages
-  // the overlay actually touches so everything else keeps its identity.
+  // Remap only the messages the overlay actually touches so everything else
+  // keeps its identity.
+  const compacting = overlay.has("compaction")
   const touched = new Set<string>()
-  let compacting = false
   overlay.forEach((_, key) => {
-    if (key === "compaction") compacting = true
-    if (key === "compaction" || key === "usage") return
-    touched.add(key.split(":")[1] ?? "")
+    const id = keyMessageID(key)
+    if (id) touched.add(id)
   })
   if (touched.size === 0 && !compacting) return messages
   return messages.map((message): SessionMessageInfo => {
@@ -456,6 +487,12 @@ function partKey(type: "text" | "reasoning", messageID: string, ordinal: number)
 
 function toolKey(type: "tool-input" | "tool-progress", messageID: string, toolID: string) {
   return `${type}:${messageID}:${toolID}`
+}
+
+// Second segment of a part or tool key; undefined for the segmentless
+// "compaction" and "usage" keys.
+function keyMessageID(key: string) {
+  return key.split(":")[1]
 }
 
 export * as Engine from "./engine"

@@ -5,7 +5,7 @@
 //   deltas   — stream DELTAS text deltas into the active assistant message
 //   retained — heap retained by the populated layer (post-GC)
 //
-// Run from packages/client: bun scripts/bench-session-sync.ts
+// Run from packages/client: bun run bench:sync
 // Emits METRIC lines (median of RUNS after 1 warmup).
 
 import { heapStats } from "bun:jsc"
@@ -77,6 +77,16 @@ type Layer = {
   dispose: () => void
 }
 
+type MessageReader = {
+  session: { message: { get: (sessionID: string, messageID: string) => SessionMessageInfo | undefined } }
+}
+
+function lastText(data: MessageReader) {
+  const message = data.session.message.get(sessionID, assistantID)
+  const part = message?.type === "assistant" ? message.content.findLast((item) => item.type === "text") : undefined
+  return part?.type === "text" ? part.text : undefined
+}
+
 function legacyLayer(): Layer {
   let handler: ((event: { name: OpenCodeEvent["type"]; details: OpenCodeEvent }) => void) | undefined
   const messages = transcript()
@@ -105,11 +115,7 @@ function legacyLayer(): Layer {
       dispatch(event) {
         handler?.({ name: event.type as OpenCodeEvent["type"], details: event as unknown as OpenCodeEvent })
       },
-      finalText() {
-        const message = data.session.message.get(sessionID, assistantID)
-        const part = message?.type === "assistant" ? message.content.findLast((item) => item.type === "text") : undefined
-        return part?.type === "text" ? part.text : undefined
-      },
+      finalText: () => lastText(data),
       dispose,
     }
   })
@@ -159,11 +165,7 @@ function engineLayer(): Layer {
         wake?.()
         wake = undefined
       },
-      finalText() {
-        const message = data.session.message.get(sessionID, assistantID)
-        const part = message?.type === "assistant" ? message.content.findLast((item) => item.type === "text") : undefined
-        return part?.type === "text" ? part.text : undefined
-      },
+      finalText: () => lastText(data),
       dispose,
     }
   })
@@ -205,7 +207,7 @@ async function measure(name: string, make: () => Layer) {
   await scenario(make) // warmup
   Bun.gc(true)
   const baseline = heapStats().heapSize
-  const runs = [] as Awaited<ReturnType<typeof scenario>>[]
+  const runs: Awaited<ReturnType<typeof scenario>>[] = []
   for (let run = 0; run < RUNS; run++) runs.push(await scenario(make))
   const hydrate = median(runs.map((run) => run.hydrate))
   const deltas = median(runs.map((run) => run.deltas))
