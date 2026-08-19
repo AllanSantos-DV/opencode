@@ -141,7 +141,7 @@ export class InboxConflictError extends Schema.TaggedError<InboxConflictError>()
   sessionID: SessionSchema.ID,
   inboxID: SessionMessage.ID,
 }) {}
-export class SeqUnavailableError extends Schema.TaggedErrorClass<SeqUnavailableError>()("Session.SeqUnavailableError", {
+export class SeqUnavailableError extends Schema.TaggedError<SeqUnavailableError>()("Session.SeqUnavailableError", {
   sessionID: SessionSchema.ID,
   after: Event.Seq,
   head: Schema.optional(Event.Seq),

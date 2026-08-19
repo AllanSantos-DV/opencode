@@ -120,8 +120,11 @@ export function createFetch(override?: FetchHandler, events?: ReturnType<typeof 
       const sessionID = decodeURIComponent(snapshot[1])
       const count = snapshots.get(sessionID) ?? 0
       snapshots.set(sessionID, count + 1)
+      // Synthetic sub-reads reuse the test override as the data source but are
+      // not app traffic; the marker header lets request-observing tests skip them.
       const read = async (path: string, fallback: unknown) => {
-        const response = await override?.(new URL(path, url), new Request(new URL(path, url)))
+        const target = new URL(path, url)
+        const response = await override?.(target, new Request(target, { headers: { "x-fixture-synthetic": "snapshot" } }))
         if (!response) return fallback
         const body = await response.json()
         if (typeof body !== "object" || body === null || !("data" in body)) return fallback
