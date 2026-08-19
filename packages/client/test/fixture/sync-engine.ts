@@ -1,3 +1,11 @@
+// In-memory model of the server's session log, used by the engine laws
+// (sync-engine-laws.test.ts), the chaos simulation (sync-engine-sim.test.ts),
+// and the legacy bug catalog (legacy-divergence.test.ts). It folds with the
+// REAL SessionFold, so `truth()` is the same interpretation of events a
+// converged client must reach, and its admission dedupes by inbox ID exactly
+// like the server's inbox projector. Faults are injected per call through the
+// `faults` record; `cutConnections` and `prune` model disconnects and lost
+// retention.
 import type { SessionInfo, SessionMessageInfo } from "../../src/promise"
 import { Engine } from "../../src/solid/engine/engine"
 import type { DurableSessionEvent, SessionFoldState, SessionSnapshot } from "../../src/solid/engine/fold"
@@ -22,7 +30,7 @@ export class FakeSessionServer implements Engine.SessionTransport {
     readonly sessionID: string,
     readonly time = 1_717_171_717_000,
   ) {
-    this.folded = SessionFold.fromSnapshot(emptySnapshot(sessionID))
+    this.folded = SessionFold.fromSnapshot(emptySnapshot(sessionID, time))
   }
 
   async snapshot(sessionID: string) {
@@ -35,7 +43,7 @@ export class FakeSessionServer implements Engine.SessionTransport {
     return this.snapshotValue()
   }
 
-  async *stream(sessionID: string, after: number): AsyncIterable<Engine.SessionStreamItem> {
+  async *stream(sessionID: string, after: number, signal?: AbortSignal): AsyncIterable<Engine.SessionStreamItem> {
     await this.pause()
     this.assertSession(sessionID)
     if (after > this.folded.seq) throw new Engine.SeqUnavailable()
@@ -43,12 +51,15 @@ export class FakeSessionServer implements Engine.SessionTransport {
     // Honest replay contract: a cursor is only admitted when retained events fully cover (after, seq].
     if (replay.length < this.folded.seq - after) throw new Engine.SeqUnavailable()
     const queue = new AsyncQueue<Engine.SessionStreamItem>()
+    const abort = () => queue.fail(new Error("stream aborted"))
+    signal?.addEventListener("abort", abort, { once: true })
     this.tails.add(queue)
     try {
       for (const event of replay) yield event
       yield { type: "log.synced", aggregateID: sessionID, seq: this.folded.seq }
       while (true) yield await queue.take()
     } finally {
+      signal?.removeEventListener("abort", abort)
       this.tails.delete(queue)
     }
   }
@@ -101,6 +112,15 @@ export class FakeSessionServer implements Engine.SessionTransport {
   /** Drop retained event history, simulating `events.persist` off or pruned retention. */
   prune() {
     this.events.length = 0
+  }
+
+  /** Clear every injected fault. */
+  heal() {
+    for (const fault of Object.keys(this.faults) as Array<keyof FakeSessionServer["faults"]>) this.faults[fault] = 0
+  }
+
+  seq() {
+    return this.folded.seq
   }
 
   truth() {
@@ -169,13 +189,13 @@ export function userMessages(messages: ReadonlyArray<SessionMessageInfo>) {
   )
 }
 
-function emptySnapshot(sessionID: string): SessionSnapshot {
+function emptySnapshot(sessionID: string, time: number): SessionSnapshot {
   const session: SessionInfo = {
     id: sessionID,
     projectID: "project",
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: { created: 1_717_171_717_000, updated: 1_717_171_717_000 },
+    time: { created: time, updated: time },
     location: { directory: "/workspace" },
   }
   return { session, children: [], inbox: [], messages: [], seq: 0 }
@@ -204,8 +224,7 @@ class AsyncQueue<Value> {
   }
 
   take() {
-    const value = this.values.shift()
-    if (value) return Promise.resolve(value)
+    if (this.values.length) return Promise.resolve(this.values.shift()!)
     if (this.error) return Promise.reject(this.error)
     return new Promise<Value>((resolve, reject) => this.waiting.push({ resolve, reject }))
   }

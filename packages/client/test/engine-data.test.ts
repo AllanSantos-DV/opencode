@@ -1,17 +1,25 @@
+// Proves the generated-client wiring the engine laws take for granted: the
+// adapter in src/solid/engine-data.ts must speak the real snapshot/log/prompt
+// API shapes and translate the generated typed errors into the engine's own
+// (the SeqUnavailable path is what laws 7-9 in test/sync-engine-laws.test.ts
+// rely on in production).
 import { describe, expect, test } from "bun:test"
 import { createRoot } from "solid-js"
 import { Engine } from "../src/solid/engine/engine"
-import { createEngineData, createEngineTransport } from "../src/solid/engine-data"
+import { SNAPSHOT_RECENT, createEngineData, createEngineTransport } from "../src/solid/engine-data"
 import { FakeSessionServer } from "./fixture/sync-engine"
 
 describe("engine data transport", () => {
   test("uses snapshot and ephemeral follow log contracts", async () => {
-    const server = new FakeSessionServer("session-transport")
+    const server = new FakeSessionServer("ses_transport")
     const calls: Array<unknown> = []
     const transport = createEngineTransport(() => ({
       async snapshot(input) {
         calls.push(input)
-        return server.snapshotValue()
+        // The generated client returns mutable arrays; the fixture's snapshot
+        // is readonly, so mirror the wire shape here.
+        const value = server.snapshotValue()
+        return { ...value, children: [...value.children], inbox: [...value.inbox], messages: [...value.messages] }
       },
       async *log(input) {
         calls.push(input)
@@ -23,12 +31,12 @@ describe("engine data transport", () => {
     }))
 
     expect(await transport.snapshot(server.sessionID)).toEqual(server.snapshotValue())
-    const items = []
+    const items: Array<Engine.SessionStreamItem> = []
     for await (const item of transport.stream(server.sessionID, 0)) items.push(item)
 
     expect(items).toEqual([{ type: "log.synced", aggregateID: server.sessionID, seq: 0 }])
     expect(calls).toEqual([
-      { sessionID: server.sessionID, recent: 200 },
+      { sessionID: server.sessionID, recent: SNAPSHOT_RECENT },
       { sessionID: server.sessionID, after: 0, follow: true, ephemeral: true },
     ])
   })
@@ -57,10 +65,8 @@ describe("engine data transport", () => {
 
     await transport.submit({
       id: "msg_client",
-      sessionID: "session-submit",
+      sessionID: "ses_submit",
       request: {
-        id: undefined,
-        sessionID: undefined,
         text: "hello",
         files: [{ uri: "file:///tmp/example.txt", name: "example.txt" }],
         delivery: "queue",
@@ -70,7 +76,7 @@ describe("engine data transport", () => {
     expect(requests).toEqual([
       {
         id: "msg_client",
-        sessionID: "session-submit",
+        sessionID: "ses_submit",
         text: "hello",
         files: [{ uri: "file:///tmp/example.txt", name: "example.txt" }],
         delivery: "queue",
@@ -79,7 +85,7 @@ describe("engine data transport", () => {
   })
 
   test("a failed initial attach does not poison the session cache", async () => {
-    const server = new FakeSessionServer("session-attach-retry")
+    const server = new FakeSessionServer("ses_attach_retry")
     server.faults.loseSnapshots = 1
     const api = {
       session: {
@@ -106,22 +112,25 @@ describe("engine data transport", () => {
   })
 
   test("translates generated typed failures", async () => {
+    // These literals mirror the generated client's error DTO shapes
+    // (SeqUnavailableError / InvalidRequestError in src/promise/generated);
+    // they must change if the generated error schema does.
     const transport = createEngineTransport(() => ({
       async snapshot() {
         throw new Error("unused")
       },
       async *log() {
-        throw { _tag: "SeqUnavailableError", sessionID: "session", after: 2, head: 1, message: "gone" }
+        throw { _tag: "SeqUnavailableError", sessionID: "ses_errors", after: 2, head: 1, message: "gone" }
       },
       async prompt() {
         throw { _tag: "InvalidRequestError", message: "invalid" }
       },
     }))
 
-    const streamError = await collectError(transport.stream("session", 2))
+    const streamError = await collectError(transport.stream("ses_errors", 2))
     expect(streamError).toBeInstanceOf(Engine.SeqUnavailable)
     await expect(
-      transport.submit({ id: "msg_client", sessionID: "session", request: { text: "invalid" } }),
+      transport.submit({ id: "msg_client", sessionID: "ses_errors", request: { text: "invalid" } }),
     ).rejects.toEqual(new Engine.SubmitRejected("invalid"))
   })
 })

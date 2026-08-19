@@ -1,3 +1,9 @@
+// Laws of the session sync engine: each test pins one property the engine
+// must hold under transport faults. Cited by number from
+// test/legacy-divergence.test.ts (the legacy bug catalog these laws rule out)
+// and stress-tested together by test/sync-engine-sim.test.ts. The server
+// model lives in test/fixture/sync-engine.ts and folds with the real
+// SessionFold, so `server.truth()` is the state a converged client must show.
 import { describe, expect, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { Engine } from "../src/solid/engine/engine"
@@ -5,7 +11,7 @@ import { FakeSessionServer, reconnectGate, until, userMessages } from "./fixture
 
 describe("session sync engine laws", () => {
   test("1. idempotency: lost responses converge to one admitted message", async () => {
-    const server = new FakeSessionServer("session-idempotency")
+    const server = new FakeSessionServer("ses_idempotency")
     server.faults.loseResponses = 1
     const engine = await Engine.createSessionEngine(server.sessionID, server, {
       now: () => server.time,
@@ -14,6 +20,9 @@ describe("session sync engine laws", () => {
 
     engine.submit({ id: "msg_1", text: "hello" })
     await until(() => engine.view().seq === 1)
+    // The admit landed but the response was lost; the reconnect makes the
+    // engine resend the same client-minted ID — that resend is what
+    // idempotency must absorb.
     server.cutConnections()
     await engine.settled()
 
@@ -23,10 +32,12 @@ describe("session sync engine laws", () => {
   })
 
   test("2. echo determinism: folding the echo does not change rendered messages", async () => {
-    const server = new FakeSessionServer("session-echo")
+    const server = new FakeSessionServer("ses_echo")
     const engine = await Engine.createSessionEngine(server.sessionID, server, { now: () => server.time })
-    await until(() => server.admitted.length === 0 && engine.view().seq === 0)
+    await engine.ready()
 
+    // The "echo" is the server's inbox.enqueued event for our own submit:
+    // folding it over the optimistic render must be invisible — no flicker.
     engine.submit({ id: "msg_1", text: "instant" })
     const before = engine.view().messages
     await engine.settled()
@@ -37,18 +48,15 @@ describe("session sync engine laws", () => {
 
   test("3. sync opacity: the fold cannot see intents or the engine", () => {
     const source = readFileSync(new URL("../src/solid/engine/fold.ts", import.meta.url), "utf8")
-    const code = source
-      .split("\n")
-      .filter((line) => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-      .join("\n")
+    const code = source.replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "")
 
-    expect(code).not.toContain("outbox")
+    expect(code).not.toMatch(/\boutbox\b/)
     expect(code).not.toContain("./engine")
-    expect(code).not.toContain("intent")
+    expect(code).not.toMatch(/\bintents?\b/i)
   })
 
   test("4. ordering: a burst admits in submission order", async () => {
-    const server = new FakeSessionServer("session-ordering")
+    const server = new FakeSessionServer("ses_ordering")
     const engine = await Engine.createSessionEngine(server.sessionID, server)
 
     for (const value of [1, 2, 3, 4, 5]) engine.submit({ id: `msg_${value}`, text: `m${value}` })
@@ -59,14 +67,14 @@ describe("session sync engine laws", () => {
   })
 
   test("5. convergence: drained clients equal the server fold", async () => {
-    const server = new FakeSessionServer("session-convergence")
+    const server = new FakeSessionServer("ses_convergence")
     const a = await Engine.createSessionEngine(server.sessionID, server, { makeID: () => "msg_a" })
     const b = await Engine.createSessionEngine(server.sessionID, server, { makeID: () => "msg_b" })
 
     a.submit({ text: "from a" })
     b.submit({ text: "from b" })
     await Promise.all([a.settled(), b.settled()])
-    await until(() => a.view().seq === server.events.length && b.view().seq === server.events.length)
+    await until(() => a.view().seq === server.seq() && b.view().seq === server.seq())
 
     expect(a.view()).toEqual(server.truth())
     expect(b.view()).toEqual(server.truth())
@@ -75,7 +83,7 @@ describe("session sync engine laws", () => {
   })
 
   test("6. failure atomicity: typed rejection removes and surfaces the intent", async () => {
-    const server = new FakeSessionServer("session-failure")
+    const server = new FakeSessionServer("ses_failure")
     server.faults.reject = 1
     const engine = await Engine.createSessionEngine(server.sessionID, server)
     const failures: Array<Engine.IntentFailure> = []
@@ -92,7 +100,7 @@ describe("session sync engine laws", () => {
   })
 
   test("7. lossy history: reconnect without retained events recovers via snapshot", async () => {
-    const server = new FakeSessionServer("session-lossy")
+    const server = new FakeSessionServer("ses_lossy")
     const gate = reconnectGate()
     const engine = await Engine.createSessionEngine(server.sessionID, server, {
       now: () => server.time,
@@ -115,7 +123,7 @@ describe("session sync engine laws", () => {
   })
 
   test("8. attach gaps: a synced marker past the fold forces snapshot recovery", async () => {
-    const server = new FakeSessionServer("session-marker-gap")
+    const server = new FakeSessionServer("ses_marker_gap")
     await server.submit({ id: "msg_1", sessionID: server.sessionID, request: { text: "hello" } })
     const stale = { ...server.snapshotValue(), messages: [], inbox: [], seq: 0 }
     let attempts = 0
@@ -144,7 +152,7 @@ describe("session sync engine laws", () => {
   })
 
   test("9. outage recovery: failed recovery snapshots retry until the server returns", async () => {
-    const server = new FakeSessionServer("session-outage")
+    const server = new FakeSessionServer("ses_outage")
     const gate = reconnectGate()
     const engine = await Engine.createSessionEngine(server.sessionID, server, {
       now: () => server.time,
@@ -168,8 +176,8 @@ describe("session sync engine laws", () => {
     engine.stop()
   })
 
-  test("snapshot refresh cannot move the fold behind the live log", async () => {
-    const server = new FakeSessionServer("session-refresh-race")
+  test("10. refresh monotonicity: a stale snapshot refresh cannot move the fold behind the live log", async () => {
+    const server = new FakeSessionServer("ses_refresh_race")
     const stale = server.snapshotValue()
     let refresh = false
     const transport: Engine.SessionTransport = {
@@ -186,6 +194,7 @@ describe("session sync engine laws", () => {
     await engine.refresh()
 
     expect(engine.view().seq).toBe(1)
+    // ...and the un-echoed intent survives the rejected refresh.
     expect(engine.view().pending.map((item) => item.id)).toEqual(["msg_1"])
     engine.stop()
   })

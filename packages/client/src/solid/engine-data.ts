@@ -38,10 +38,13 @@ const ambientSessionEvents = new Set<OpenCodeEvent["type"]>([
   "session.execution.interrupted",
 ])
 
+/** How many recent messages a session snapshot fetch requests. */
+export const SNAPSHOT_RECENT = 200
+
 export function createEngineTransport(api: () => SessionApi): Engine.SessionTransport {
   return {
     snapshot(sessionID) {
-      return api().snapshot({ sessionID, recent: 200 })
+      return api().snapshot({ sessionID, recent: SNAPSHOT_RECENT })
     },
     async *stream(sessionID, after, signal) {
       try {

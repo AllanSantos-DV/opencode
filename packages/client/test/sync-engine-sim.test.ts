@@ -1,3 +1,8 @@
+// Seeded chaos simulation: two engine clients share one FakeSessionServer
+// while every fault the fixture can inject is thrown at them at random, then
+// all faults heal and both clients must converge exactly to the server's
+// truth. This stress-tests the laws of test/sync-engine-laws.test.ts in
+// combination; failures reproduce deterministically from the seed.
 import { describe, expect, test } from "bun:test"
 import { Engine } from "../src/solid/engine/engine"
 import { FakeSessionServer, until, userMessages } from "./fixture/sync-engine"
@@ -14,9 +19,12 @@ describe("session sync engine simulation", () => {
   for (const seed of [1, 2, 3, 42, 1337, 90210]) {
     test(`seed ${seed}: two clients converge through chaotic transport faults`, async () => {
       const random = mulberry32(seed)
-      const server = new FakeSessionServer(`session-sim-${seed}`)
+      const server = new FakeSessionServer(`ses_sim_${seed}`)
       const clients = await Promise.all([makeClient("a", server), makeClient("b", server)])
 
+      // Chaos phase. Per step: 45% submit from a random client, 10% cut all
+      // connections, 10% lose a response, 8% lose a burst of requests,
+      // 7% reject an admission, 7% lose a snapshot fetch, 13% shift latency.
       for (let step = 0; step < 80; step++) {
         const roll = random()
         if (roll < 0.45) {
@@ -39,11 +47,10 @@ describe("session sync engine simulation", () => {
         await advance(2 + Math.floor(random() * 8))
       }
 
-      server.faults.latency = 0
-      server.faults.loseRequests = 0
-      server.faults.loseResponses = 0
-      server.faults.loseSnapshots = 0
-      server.faults.reject = 0
+      // Drain phase: heal all faults, then repeatedly cut connections —
+      // reconnecting is what makes the engine resend intents whose responses
+      // were lost, so every submitted ID ends up admitted or rejected.
+      server.heal()
       for (let attempt = 0; attempt < 100; attempt++) {
         server.cutConnections()
         await advance(4)
@@ -55,7 +62,7 @@ describe("session sync engine simulation", () => {
         if (accounted) break
       }
       await until(
-        () => clients.every((client) => client.engine.view().seq === server.events.length),
+        () => clients.every((client) => client.engine.view().seq === server.seq()),
         `seed ${seed} did not converge`,
       )
 
@@ -85,6 +92,8 @@ async function makeClient(name: string, server: FakeSessionServer): Promise<Clie
   return client
 }
 
+// Once an admitted message first renders, it appears exactly once in every
+// subsequent view — it never disappears or duplicates.
 function assertNoFlicker(views: ReadonlyArray<Engine.SessionView>, admitted: ReadonlyArray<string>, label: string) {
   for (const id of admitted) {
     const first = views.findIndex((view) => userMessages(view.messages).some((message) => message.id === id))
@@ -96,6 +105,8 @@ function assertNoFlicker(views: ReadonlyArray<Engine.SessionView>, admitted: Rea
   }
 }
 
+// One "step" is one microtask turn — each fixture `pause()` under
+// `faults.latency` consumes one — followed by a macrotask flush.
 async function advance(steps: number) {
   for (let step = 0; step < steps; step++) await Promise.resolve()
   await Bun.sleep(0)
