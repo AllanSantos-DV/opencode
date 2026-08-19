@@ -1,5 +1,5 @@
-import { batch, onCleanup } from "solid-js"
-import { createStore, reconcile, unwrap } from "solid-js/store"
+import { batch, createSignal, onCleanup, untrack } from "solid-js"
+import type { Signal } from "solid-js"
 import type { OpenCodeClient, OpenCodeEvent, SessionPromptInput } from "../promise"
 import { isSeqUnavailableError } from "../promise"
 import { createData } from "./data"
@@ -8,18 +8,9 @@ import { Engine } from "./engine/engine"
 
 type SessionApi = Pick<OpenCodeClient["session"], "snapshot" | "log" | "prompt">
 
-// Solid's setStore path types reject readonly arrays. The store only ever
-// holds deep clones it owns, so a mutable mirror of the engine view is safe.
-// Shallow on purpose: a recursive mutable type either flattens tuples or
-// exceeds TS instantiation depth on the recursive metadata JSON types.
-type StoreSessionView = {
-  -readonly [Key in keyof Engine.SessionView]: Engine.SessionView[Key] extends ReadonlyArray<infer Item>
-    ? Item[]
-    : Engine.SessionView[Key]
-}
-
-// Engine data is plain JSON, so a recursive copy beats structuredClone's
-// serialization overhead on the small per-event subtrees the adapter clones.
+// The legacy layer reconciles handed-off values into its own store, mutating
+// them in place — so anything shared with it must be a copy, never engine
+// state. Engine data is plain JSON, so a recursive copy suffices.
 function clone<T>(value: T): T {
   if (value === null || typeof value !== "object") return value
   if (Array.isArray(value)) return value.map(clone) as T
@@ -83,7 +74,6 @@ export function createEngineData(config: CreateDataInput) {
       },
     },
   })
-  const [views, setViews] = createStore<Record<string, StoreSessionView>>({})
   const engines = new Map<string, Promise<Engine.SessionEngine>>()
   const families = new Set<string>()
   const invalidated = new Set<string>()
@@ -92,51 +82,35 @@ export function createEngineData(config: CreateDataInput) {
   const transport = createEngineTransport(() => config.api().session)
   let connected = false
 
-  // Reconcile mutates the store's backing tree in place, so engine state must
-  // never be aliased into it and every clone must appear at exactly one store
-  // path. The fold is a persistent structure — successive views share
-  // references for everything unchanged — so diff the previous view by
-  // identity and deep-clone only the changed subtrees. (A full-view
-  // structuredClone per publish dominated the streaming hot path.) New
-  // SessionView fields must be diffed here or they never propagate past the
-  // first publish.
-  const rendered = new Map<string, Engine.SessionView>()
-  const update = (sessionID: string, view: Engine.SessionView) => {
-    const previous = rendered.get(sessionID)
-    rendered.set(sessionID, view)
-    const sessionChanged = view.session !== previous?.session
+  // One signal per session holding the engine's immutable view. The fold is a
+  // persistent structure — unchanged subtrees keep their object identity
+  // across publishes — so keyed consumers get row stability from reference
+  // equality, and the engine's publish guard already drops identity-unchanged
+  // views. Reactivity is per session: any change to a session's view re-runs
+  // that session's readers.
+  const signals = new Map<string, Signal<Engine.SessionView | undefined>>()
+  const viewSignal = (sessionID: string) => {
+    const existing = signals.get(sessionID)
+    if (existing) return existing
+    const created = createSignal<Engine.SessionView | undefined>(undefined)
+    signals.set(sessionID, created)
+    return created
+  }
+  const view = (sessionID: string) => viewSignal(sessionID)[0]()
+
+  const update = (sessionID: string, next: Engine.SessionView) => {
+    const [read, write] = viewSignal(sessionID)
+    const previous = untrack(read)
     batch(() => {
-      if (!previous) setViews(sessionID, clone(view) as StoreSessionView)
-      else {
-        if (sessionChanged) setViews(sessionID, "session", reconcile(clone(view.session)))
-        if (view.children !== previous.children)
-          setViews(sessionID, "children", reconcile(clone(view.children) as StoreSessionView["children"]))
-        if (view.inbox !== previous.inbox)
-          setViews(sessionID, "inbox", reconcile(clone(view.inbox) as StoreSessionView["inbox"]))
-        if (view.pending !== previous.pending)
-          setViews(sessionID, "pending", reconcile(clone(view.pending) as StoreSessionView["pending"]))
-        if (view.seq !== previous.seq) setViews(sessionID, "seq", view.seq)
-        if (view.active !== previous.active) setViews(sessionID, "active", view.active)
-        if (view.deleted !== previous.deleted) setViews(sessionID, "deleted", view.deleted)
-        if (view.messages !== previous.messages) {
-          // Per-index writes can grow the store array but never shrink it, so
-          // a shorter messages list falls back to a whole-array reconcile.
-          if (view.messages.length < previous.messages.length)
-            setViews(sessionID, "messages", reconcile(clone(view.messages) as StoreSessionView["messages"]))
-          else
-            for (let index = 0; index < view.messages.length; index++)
-              if (view.messages[index] !== previous.messages[index])
-                setViews(sessionID, "messages", index, reconcile(clone(view.messages[index])))
-        }
-      }
-      if (sessionChanged) {
+      write(next)
+      if (next.session !== previous?.session) {
         const current = legacy.session.get(sessionID)
-        if (!current || current.time.updated <= view.session.time.updated) {
-          legacy.session.remember(clone(view.session))
+        if (!current || current.time.updated <= next.session.time.updated) {
+          legacy.session.remember(clone(next.session))
         }
       }
-      if (families.has(sessionID) && view.children !== previous?.children) {
-        view.children.forEach((child) => legacy.session.remember(clone(child)))
+      if (families.has(sessionID) && next.children !== previous?.children) {
+        next.children.forEach((child) => legacy.session.remember(clone(child)))
       }
     })
   }
@@ -186,26 +160,26 @@ export function createEngineData(config: CreateDataInput) {
         if (options?.children) families.add(sessionID)
         await sync(sessionID)
         if (!options?.children) return
-        const view = views[sessionID]
-        view?.children.forEach((child) => legacy.session.remember(clone(unwrap(child))))
+        view(sessionID)?.children.forEach((child) => legacy.session.remember(clone(child)))
       },
       invalidate(sessionID: string) {
         invalidated.add(sessionID)
       },
       status(sessionID: string) {
-        if (views[sessionID]?.active === "running") return "running"
+        if (view(sessionID)?.active === "running") return "running"
         return legacy.session.status(sessionID)
       },
       input: {
         list(sessionID: string) {
           return (
-            views[sessionID]?.pending.filter((item) => item.type !== "compaction").map((item) => item.id) ??
-            legacy.session.input.list(sessionID)
+            view(sessionID)
+              ?.pending.filter((item) => item.type !== "compaction")
+              .map((item) => item.id) ?? legacy.session.input.list(sessionID)
           )
         },
         has(sessionID: string, inboxID: string) {
           return (
-            views[sessionID]?.pending.some((item) => item.type !== "compaction" && item.id === inboxID) ??
+            view(sessionID)?.pending.some((item) => item.type !== "compaction" && item.id === inboxID) ??
             legacy.session.input.has(sessionID, inboxID)
           )
         },
@@ -213,7 +187,7 @@ export function createEngineData(config: CreateDataInput) {
       pending: {
         list(sessionID: string) {
           void ensure(sessionID)
-          return [...(views[sessionID]?.pending ?? [])]
+          return [...(view(sessionID)?.pending ?? [])]
         },
         sync(sessionID: string) {
           return sync(sessionID)
@@ -225,11 +199,11 @@ export function createEngineData(config: CreateDataInput) {
       message: {
         list(sessionID: string) {
           void ensure(sessionID)
-          return [...(views[sessionID]?.messages ?? [])]
+          return [...(view(sessionID)?.messages ?? [])]
         },
         get(sessionID: string, messageID: string) {
           void ensure(sessionID)
-          return views[sessionID]?.messages.find((message) => message.id === messageID)
+          return view(sessionID)?.messages.find((message) => message.id === messageID)
         },
         sync(sessionID: string) {
           return sync(sessionID)
