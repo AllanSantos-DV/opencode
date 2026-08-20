@@ -1,7 +1,6 @@
 export * as CommandPlugin from "./command.js"
 
 import { define } from "@opencode-ai/plugin/effect/plugin"
-import { McpEvent } from "@opencode-ai/schema/mcp-event"
 import { Effect, Stream } from "effect"
 import { Bus } from "../bus.js"
 import { Location } from "../location.js"
@@ -17,7 +16,7 @@ export const Plugin = define({
     const bus = yield* Bus.Service
     const loaded = { prompts: [] as MCP.Prompt[] }
     yield* bus
-      .subscribe(McpEvent.PromptsChanged)
+      .subscribe(MCP.PromptsChanged)
       .pipe(
         Stream.runForEach(() =>
           mcp.prompts().pipe(

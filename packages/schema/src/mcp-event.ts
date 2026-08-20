@@ -17,13 +17,6 @@ export const ResourcesChanged = Event.ephemeral({
   },
 })
 
-export const PromptsChanged = Event.ephemeral({
-  type: "mcp.prompts.changed",
-  schema: {
-    server: Schema.String,
-  },
-})
-
 // Emitted whenever a server's connection status settles (connected, failed, needs_auth, closed) so
 // observers can refresh status without polling.
 export const StatusChanged = Event.ephemeral({
@@ -33,4 +26,4 @@ export const StatusChanged = Event.ephemeral({
   },
 })
 
-export const Definitions = Event.inventory(ToolsChanged, ResourcesChanged, PromptsChanged, StatusChanged)
+export const Definitions = Event.inventory(ToolsChanged, ResourcesChanged, StatusChanged)

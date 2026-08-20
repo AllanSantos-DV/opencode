@@ -5,7 +5,7 @@ import type { PromptInput } from "@opencode-ai/schema/prompt-input"
 import type { Session } from "@opencode-ai/schema/session"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
-import { Cause, Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Bus } from "./bus.js"
 import { State } from "./state.js"
 
@@ -83,9 +83,8 @@ export const layer = Layer.effect(
         if (!definition)
           return yield* new NotFoundError({ command: input.name, message: `Command not found: ${input.name}` })
         return yield* definition.execute(input.invocation).pipe(
-          Effect.mapError(
-            (error) => new ExecutionError({ command: input.name, message: Cause.pretty(Cause.fail(error)) }),
-          ),
+          Effect.tapError((error) => Effect.logError("command execution failed", { command: input.name, error })),
+          Effect.mapError((error) => new ExecutionError({ command: input.name, message: errorMessage(error) })),
         )
       }),
     })
@@ -97,3 +96,11 @@ export const node = makeLocationNode({
   layer,
   deps: [Bus.node],
 })
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === "string") return error
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string")
+    return error.message
+  return "Command execution failed"
+}

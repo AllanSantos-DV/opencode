@@ -44,4 +44,28 @@ describe("Command", () => {
       expect(yield* command.list()).toEqual([Command.Info.make({ name: "goal", description: "Second" })])
     }),
   )
+
+  it.effect("returns callback error messages without stack traces", () =>
+    Effect.gen(function* () {
+      const command = yield* Command.Service
+      yield* command.transform((draft) => {
+        draft.add({
+          name: "fail",
+          execute: () => Effect.fail(new Error("command failed")),
+        })
+      })
+
+      const error = yield* command
+        .execute({
+          name: "fail",
+          invocation: {
+            sessionID: Session.ID.make("ses_test"),
+            prompt: { text: "" },
+            delivery: "steer",
+          },
+        })
+        .pipe(Effect.flip)
+      expect(error).toMatchObject({ _tag: "Command.ExecutionError", message: "command failed" })
+    }),
+  )
 })

@@ -1647,12 +1647,6 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       )
     }
 
-    const selected = await resolveSelectedModel(input, client, next)
-    if (next.variant && !selected) throw new Error("Cannot select a variant before selecting a model")
-    if (next.agent)
-      await client.session.switchAgent({ sessionID: input.sessionID, agent: next.agent }, { signal: next.signal })
-    if (selected)
-      await client.session.switchModel({ sessionID: input.sessionID, model: selected }, { signal: next.signal })
     input.trace?.write("send.command", { sessionID: input.sessionID, messageID, command: command.name, delivery })
     return client.session.command(
       {
@@ -1699,7 +1693,7 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         throw new Error("This prompt cannot be queued")
       if (!state.connected) throw new Error("Event stream is reconnecting")
       const client = sdk
-      if (next.agent)
+      if (!next.prompt.command && next.agent)
         await client.session.switchAgent({ sessionID: input.sessionID, agent: next.agent }, { signal: next.signal })
       if (!next.prompt.command) {
         const selected = await resolveSelectedModel(input, client, next)
@@ -1746,13 +1740,8 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
         return
       }
       if (command) {
-        await runTurnWait(
-          next,
-          messageID,
-          client,
-          () => admitPrompt(next, client, next.prompt.delivery ?? "steer"),
-          admitted,
-        )
+        await admitPrompt(next, client, next.prompt.delivery ?? "steer")
+        admitted?.()
         return
       }
 

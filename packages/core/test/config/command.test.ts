@@ -1,9 +1,12 @@
 import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer, Option, PubSub, Schema, Stream } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Layer, Option, PubSub, Schema, Stream } from "effect"
 import { advance, drain } from "../lib/clock"
 import { Directory, Document, Event, Info } from "@opencode-ai/schema/config"
+import { Session } from "@opencode-ai/schema/session"
+import { SessionInbox } from "@opencode-ai/schema/session-inbox"
+import { SessionMessage } from "@opencode-ai/schema/session-message"
 import { Command } from "@opencode-ai/core/command"
 import { Config } from "@opencode-ai/core/config"
 import { ConfigCommandPlugin } from "@opencode-ai/core/config/plugin/command"
@@ -18,6 +21,7 @@ import { AppProcess } from "@opencode-ai/util/process"
 import { Location } from "@opencode-ai/core/location"
 import { MCP } from "@opencode-ai/core/mcp/index"
 import { AbsolutePath } from "@opencode-ai/core/schema"
+import { Shell } from "@opencode-ai/core/shell"
 import { Watcher } from "@opencode-ai/core/filesystem/watcher"
 import { emptyCredentialNode, emptyWellknownNode } from "../fixture/config-nodes"
 import { emptyConfigLayer, emptyMcpLayer, testLocationLayer } from "../fixture/mcp"
@@ -26,13 +30,28 @@ import { tmpdir } from "../fixture/tmpdir"
 import { testEffect } from "../lib/effect"
 import { host } from "../plugin/host"
 
+const shellLayer = Layer.succeed(
+  Shell.Service,
+  Shell.Service.of({
+    name: () => Effect.succeed("sh"),
+    create: () => Effect.die("unused shell.create"),
+    list: () => Effect.die("unused shell.list"),
+    get: () => Effect.die("unused shell.get"),
+    wait: () => Effect.die("unused shell.wait"),
+    timeout: () => Effect.die("unused shell.timeout"),
+    output: () => Effect.die("unused shell.output"),
+    remove: () => Effect.die("unused shell.remove"),
+  }),
+)
+
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Command.node, Bus.node, FSUtil.node, AppProcess.node, Global.node, Location.node]),
+    LayerNode.group([Command.node, Bus.node, FSUtil.node, AppProcess.node, Location.node, Shell.node]),
     [
-    [MCP.node, emptyMcpLayer],
-    [Config.node, emptyConfigLayer],
-    [Location.node, testLocationLayer],
+      [MCP.node, emptyMcpLayer],
+      [Config.node, emptyConfigLayer],
+      [Location.node, testLocationLayer],
+      [Shell.node, shellLayer],
     ],
   ),
 )
@@ -66,6 +85,7 @@ Review files`,
           const bus = yield* Bus.Service
           const update = yield* bus.publish(Event.Updated, {})
           const updates = yield* PubSub.unbounded<typeof update>()
+          const prompts: { text: string; files?: readonly { readonly uri: string }[]; delivery?: string }[] = []
           yield* ConfigCommandPlugin.Plugin.effect(
             host({
               command: {
@@ -74,6 +94,20 @@ Review files`,
                 reload: command.reload,
               },
               event: { subscribe: () => Stream.fromPubSub(updates) },
+              session: {
+                prompt: (input) =>
+                  Effect.sync(() => {
+                    prompts.push({ text: input.text, files: input.files, delivery: input.delivery })
+                    return SessionInbox.User.make({
+                      id: SessionMessage.ID.make("msg_test"),
+                      sessionID: input.sessionID,
+                      timeCreated: DateTime.makeUnsafe(0),
+                      type: "user",
+                      payload: { text: input.text },
+                      delivery: input.delivery ?? "steer",
+                    })
+                  }),
+              },
             }),
           ).pipe(
             Effect.provide(
@@ -95,6 +129,21 @@ Review files`,
             Command.Info.make({ name: "empty" }),
             Command.Info.make({ name: "nested/docs" }),
           ])
+          yield* command.execute({
+            name: "nested/docs",
+            invocation: {
+              sessionID: Session.ID.make("ses_test"),
+              prompt: { text: "details", files: [{ uri: "file:///tmp/context.md" }] },
+              delivery: "queue",
+            },
+          })
+          expect(prompts).toEqual([
+            {
+              text: "Write docs\n\ndetails",
+              files: [{ uri: "file:///tmp/context.md" }],
+              delivery: "queue",
+            },
+          ])
 
           yield* Effect.promise(() =>
             fs.writeFile(path.join(tmp.path, "commands", "review.md"), markdown("Review again", "Review again")),
@@ -106,6 +155,15 @@ Review files`,
             yield* Effect.sleep("10 millis")
           }
           expect((yield* command.get("review"))?.description).toBe("Review again")
+          yield* command.execute({
+            name: "review",
+            invocation: {
+              sessionID: Session.ID.make("ses_test"),
+              prompt: { text: "latest" },
+              delivery: "steer",
+            },
+          })
+          expect(prompts.at(-1)?.text).toBe("Review again\n\nlatest")
         }),
       ),
     ),
@@ -296,18 +354,20 @@ describeNative("ConfigCommandPlugin native watcher", () => {
               AppProcess.node,
               Global.node,
               Location.node,
+              Shell.node,
             ]),
             [
-            [
-              Location.node,
-              Layer.succeed(
-                Location.Service,
-                Location.Service.of(location({ directory: AbsolutePath.make(path.join(tmp, "project")) })),
-              ),
-            ],
-            [Global.node, Global.layerWith({ config: global, home: path.join(global, "home") })],
-            [Credential.node, emptyCredentialNode],
-            [WellKnown.node, emptyWellknownNode],
+              [
+                Location.node,
+                Layer.succeed(
+                  Location.Service,
+                  Location.Service.of(location({ directory: AbsolutePath.make(path.join(tmp, "project")) })),
+                ),
+              ],
+              [Global.node, Global.layerWith({ config: global, home: path.join(global, "home") })],
+              [Shell.node, shellLayer],
+              [Credential.node, emptyCredentialNode],
+              [WellKnown.node, emptyWellknownNode],
             ],
           ),
         ),

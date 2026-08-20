@@ -6,13 +6,13 @@ import { Info, type Entry } from "@opencode-ai/schema/config"
 import { ConfigCommand } from "@opencode-ai/schema/config/command"
 import { Model } from "@opencode-ai/schema/model"
 import { Provider } from "@opencode-ai/schema/provider"
-import { Global } from "@opencode-ai/util/global"
 import { AppProcess } from "@opencode-ai/util/process"
 import path from "path"
 import { Effect, Option, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../../config.js"
 import { Location } from "../../location.js"
+import { Shell } from "../../shell.js"
 import { ShellSelect } from "../../shell/select.js"
 import { FSUtil } from "@opencode-ai/util/fs-util"
 import { ConfigMarkdown } from "../markdown.js"
@@ -24,9 +24,9 @@ export const Plugin = define({
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
     const fs = yield* FSUtil.Service
-    const global = yield* Global.Service
     const location = yield* Location.Service
     const processes = yield* AppProcess.Service
+    const shell = yield* Shell.Service
     const load = Effect.fn("ConfigCommandPlugin.load")(function* () {
       return yield* Effect.forEach(yield* config.entries(), (entry) => {
         if (entry.type === "document") return Effect.succeed([{ commands: entry.info.commands }])
@@ -69,10 +69,12 @@ export const Plugin = define({
             execute: (input) =>
               Effect.gen(function* () {
                 const agent = command.agent === undefined ? undefined : Agent.ID.make(command.agent)
-                const session = yield* ctx.session.get({ sessionID: input.sessionID })
-                if (agent !== undefined && session.agent !== agent)
-                  yield* ctx.session.switchAgent({ sessionID: input.sessionID, agent })
-                const commandAgent = agent === undefined ? undefined : (yield* ctx.agent.get({ agentID: agent })).data
+                const commandAgent = yield* Effect.gen(function* () {
+                  if (agent === undefined) return
+                  const session = yield* ctx.session.get({ sessionID: input.sessionID })
+                  if (session.agent !== agent) yield* ctx.session.switchAgent({ sessionID: input.sessionID, agent })
+                  return (yield* ctx.agent.get({ agentID: agent })).data
+                })
                 const model =
                   command.model === undefined
                     ? commandAgent?.model
@@ -91,7 +93,7 @@ export const Plugin = define({
                     config,
                     location,
                     processes,
-                    bin: global.bin,
+                    shell,
                   }),
                   delivery: input.delivery,
                 })
@@ -156,7 +158,7 @@ function evaluateTemplate(
     readonly config: Config.Interface
     readonly location: Location.Info
     readonly processes: AppProcess.Interface
-    readonly bin: string
+    readonly shell: Shell.Interface
   },
 ) {
   return Effect.gen(function* () {
@@ -177,13 +179,14 @@ function evaluateTemplate(
         : withArguments.trim()
     const matches = Array.from(text.matchAll(shellRegex))
     if (matches.length === 0) return text
-    const shell = ShellSelect.preferred(Config.latest(yield* services.config.entries(), "shell"), undefined, services.bin)
+    const shell = yield* services.shell.name()
     const outputs = yield* Effect.forEach(
       matches,
-      (match) =>
-        services.processes
+      (match) => {
+        const source = match[1] ?? ""
+        return services.processes
           .run(
-            ChildProcess.make(shell, ShellSelect.args(shell, match[1] ?? ""), {
+            ChildProcess.make(shell, ShellSelect.args(shell, source), {
               cwd: services.location.directory,
               stdin: "ignore",
             }),
@@ -191,7 +194,11 @@ function evaluateTemplate(
           )
           .pipe(
             Effect.map((result) => (result.output ?? Buffer.concat([result.stdout, result.stderr])).toString("utf8")),
-          ),
+            Effect.mapError((error) =>
+              new Error(`Shell interpolation failed for ${JSON.stringify(source)}: ${error.message}`),
+            ),
+          )
+      },
       { concurrency: 2 },
     )
     const iterator = outputs[Symbol.iterator]()

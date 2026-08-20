@@ -326,6 +326,7 @@ export function make(input: { readonly client: OpenCodeClient; readonly connecti
         cwd: state.cwd,
         start: prepared.start,
         writeTextFile: capabilities.writeTextFile,
+        action: prepared.command !== undefined,
         control,
         connectionSignal: input.connection.signal,
         sessionSignal: state.abort.signal,
