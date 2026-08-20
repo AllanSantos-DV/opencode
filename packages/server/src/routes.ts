@@ -115,7 +115,6 @@ function makeRoutes<AuthError, AuthServices>(
       }),
     ],
     [InstructionDiscovery.node, InstructionDiscovery.configured({ project: options.config?.project })],
-    [Command.node, Command.configured({ gitbash: options.windows?.gitbash })],
     [Pty.node, Pty.configured({ gitbash: options.windows?.gitbash })],
     [Shell.node, Shell.configured({ gitbash: options.windows?.gitbash })],
     [

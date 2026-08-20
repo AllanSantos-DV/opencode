@@ -1234,22 +1234,31 @@ export function Prompt(props: PromptProps) {
       const model = { providerID: selection.providerID, id: selection.modelID, variant }
       const cancelCommit = local.model.trackSessionCommit(sessionID, model)
 
-      void client.api.session
-        .command({
+      void (async () => {
+        if (!session) {
+          await data.session.sync(sessionID)
+          session = data.session.get(sessionID)
+        }
+        if (session?.agent !== agent.id) await client.api.session.switchAgent({ sessionID, agent: agent.id })
+        if (
+          session?.model?.providerID !== model.providerID ||
+          session.model.id !== model.id ||
+          session.model.variant !== model.variant
+        )
+          await client.api.session.switchModel({ sessionID, model })
+        await client.api.session.command({
           sessionID,
           command: slashHead.name,
-          arguments: slashHead.arguments,
-          agent: agent.id,
-          model,
+          text: slashHead.arguments,
           files: store.prompt.files,
           agents: store.prompt.agents,
           skills: store.prompt.skills?.length ? store.prompt.skills : undefined,
           delivery,
         })
-        .catch((error) => {
-          cancelCommit()
-          toast.show({ title: "Failed to run command", message: errorMessage(error), variant: "error" })
-        })
+      })().catch((error) => {
+        cancelCommit()
+        toast.show({ title: "Failed to run command", message: errorMessage(error), variant: "error" })
+      })
     } else if (isSkill) {
       move.startSubmit()
       void client.api.session.skill({

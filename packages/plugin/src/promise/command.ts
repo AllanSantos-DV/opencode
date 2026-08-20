@@ -1,18 +1,19 @@
 import type { CommandApi } from "@opencode-ai/client/promise/api"
+import type { PromptInput } from "@opencode-ai/schema/prompt-input"
 import type { Session } from "@opencode-ai/schema/session"
 import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
 import type { Transform } from "./registration.js"
 
 export interface CommandInvocation {
   readonly sessionID: Session.ID
-  readonly arguments: string
+  readonly prompt: PromptInput.Prompt
   readonly delivery: SessionInbox.Delivery
 }
 
 export interface CommandDefinition {
   readonly name: string
   readonly description?: string
-  readonly run: (input: CommandInvocation) => Promise<void>
+  readonly execute: (input: CommandInvocation) => Promise<void>
 }
 
 export interface CommandDraft {

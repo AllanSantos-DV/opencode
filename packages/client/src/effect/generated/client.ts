@@ -415,21 +415,14 @@ const Endpoint5_13 = (raw: RawClient["server.session"]) => (input: Endpoint5_13I
     raw["session.command"]({
       params: { sessionID: input["sessionID"] },
       payload: {
-        id: input["id"],
         command: input["command"],
-        arguments: input["arguments"],
-        agent: input["agent"],
-        model: input["model"],
+        text: input["text"],
         files: input["files"],
         agents: input["agents"],
         skills: input["skills"],
         delivery: input["delivery"],
-        resume: input["resume"],
       },
-    }).pipe(
-      Effect.mapError(mapClientError),
-      Effect.map((value) => value.data),
-    ),
+    }).pipe(Effect.mapError(mapClientError)),
   )
 
 const Endpoint5_14 = (raw: RawClient["server.session"]) => (input: Endpoint5_14Input) =>

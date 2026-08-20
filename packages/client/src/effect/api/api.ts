@@ -184,18 +184,14 @@ export type SessionPromptOperation<E = never> = (input: Endpoint5_12Input) => Ef
 
 export type Endpoint5_13Input = {
   readonly sessionID: Session.ID
-  readonly id?: SessionMessage.ID | undefined
   readonly command: string
-  readonly arguments?: string | undefined
-  readonly agent?: Agent.ID | undefined
-  readonly model?: Model.Ref | undefined
+  readonly text: string
   readonly files?: ReadonlyArray<PromptInput.FileAttachment> | undefined
   readonly agents?: ReadonlyArray<AgentAttachment> | undefined
   readonly skills?: ReadonlyArray<PromptInput.SkillAttachment> | undefined
   readonly delivery?: SessionInbox.Delivery | undefined
-  readonly resume?: boolean | undefined
 }
-export type Endpoint5_13Output = SessionInbox.User
+export type Endpoint5_13Output = void
 export type SessionCommandOperation<E = never> = (input: Endpoint5_13Input) => Effect.Effect<Endpoint5_13Output, E>
 
 export type Endpoint5_14Input = {

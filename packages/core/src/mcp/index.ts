@@ -2,7 +2,6 @@ export * as MCP from "./index.js"
 
 import { Mcp } from "@opencode-ai/schema/mcp"
 import { McpEvent } from "@opencode-ai/schema/mcp-event"
-import { Command } from "@opencode-ai/schema/command"
 import { createHash } from "node:crypto"
 import { isDeepStrictEqual } from "node:util"
 import { Cause, Context, Deferred, Effect, Exit, FiberSet, Layer, Schema, Scope, Stream, Types } from "effect"
@@ -428,7 +427,7 @@ export const layer = (options?: Options) =>
           Effect.map((defs) => {
             entry.prompts = defs.map((def) => toPrompt(name, def))
           }),
-          Effect.andThen(bus.publish(Command.Event.Updated, {})),
+          Effect.andThen(bus.publish(McpEvent.PromptsChanged, { server: name })),
         )
 
       // Runs a connection callback under the server lock, dropping it if the connection is no longer
@@ -547,7 +546,7 @@ export const layer = (options?: Options) =>
         yield* Scope.close(scope, Exit.void)
         yield* bus.publish(McpEvent.ToolsChanged, { server: name }).pipe(Effect.ignore)
         yield* bus.publish(McpEvent.ResourcesChanged, { server: name }).pipe(Effect.ignore)
-        yield* bus.publish(Command.Event.Updated, {}).pipe(Effect.ignore)
+        yield* bus.publish(McpEvent.PromptsChanged, { server: name }).pipe(Effect.ignore)
       })
 
       const disposeServer = Effect.fnUntraced(function* (name: ServerName, entry: ServerEntry) {
