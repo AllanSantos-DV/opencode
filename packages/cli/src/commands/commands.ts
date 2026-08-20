@@ -187,6 +187,28 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
       description: "List all available models",
       params: ServerParams,
     }),
+    Spec.make("stats", {
+      description: "Show shareable usage statistics",
+      params: {
+        ...ServerParams,
+        days: Flag.integer("days").pipe(Flag.withDescription("Show the last N days; 0 means today"), Flag.optional),
+        year: Flag.integer("year").pipe(Flag.withDescription("Show a calendar year"), Flag.optional),
+        all: Flag.boolean("all").pipe(Flag.withDescription("Show lifetime statistics"), Flag.withDefault(false)),
+        project: Flag.string("project").pipe(
+          Flag.withDescription('Filter by project ID, or use "." for the current project'),
+          Flag.optional,
+        ),
+        models: Flag.boolean("models").pipe(Flag.withDescription("Show model usage"), Flag.withDefault(false)),
+        tools: Flag.boolean("tools").pipe(Flag.withDescription("Show tool reliability"), Flag.withDefault(false)),
+        cost: Flag.boolean("cost").pipe(Flag.withDescription("Show cost and token details"), Flag.withDefault(false)),
+        full: Flag.boolean("full").pipe(Flag.withDescription("Show every detailed section"), Flag.withDefault(false)),
+        limit: Flag.integer("limit").pipe(
+          Flag.withDescription("Number of rows in detailed sections"),
+          Flag.withDefault(5),
+        ),
+        json: Flag.boolean("json").pipe(Flag.withDescription("Output statistics as JSON"), Flag.withDefault(false)),
+      },
+    }),
     Spec.make("export", {
       description: "Export session data as JSON",
       params: {

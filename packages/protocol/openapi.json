@@ -657,6 +657,123 @@
         }
       }
     },
+    "/api/session/stats": {
+      "get": {
+        "tags": ["session"],
+        "operationId": "v2.session.stats",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          },
+          {
+            "name": "timezone",
+            "in": "query",
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "required": false
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SessionStats.Info"
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError1"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Aggregate local session activity, usage, and tool reliability for a time range.",
+        "summary": "Get session statistics"
+      }
+    },
     "/api/session/import": {
       "post": {
         "tags": ["session"],
@@ -10254,6 +10371,238 @@
           }
         },
         "required": ["created"],
+        "additionalProperties": false
+      },
+      "SessionStats.Activity": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          }
+        },
+        "required": ["date", "steps"],
+        "additionalProperties": false
+      },
+      "SessionStats.ModelUsage": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "$ref": "#/components/schemas/Model.Ref"
+          },
+          "steps": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUsage.Info"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/Money.USD"
+          }
+        },
+        "required": ["model", "steps", "tokens", "cost"],
+        "additionalProperties": false
+      },
+      "SessionStats.ToolUsage": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "calls": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "succeeded": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "failed": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "unfinished": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "durationP50": {
+            "type": "number"
+          }
+        },
+        "required": ["name", "calls", "succeeded", "failed", "unfinished"],
+        "additionalProperties": false
+      },
+      "SessionStats.Info": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "object",
+            "properties": {
+              "from": {
+                "type": "number"
+              },
+              "to": {
+                "type": "number"
+              }
+            },
+            "required": ["from", "to"],
+            "additionalProperties": false
+          },
+          "sessions": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "subagents": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "prompts": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "steps": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "tokens": {
+            "$ref": "#/components/schemas/TokenUsage.Info"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/Money.USD"
+          },
+          "tools": {
+            "type": "object",
+            "properties": {
+              "calls": {
+                "type": "integer",
+                "allOf": [
+                  {
+                    "minimum": 0
+                  }
+                ]
+              },
+              "succeeded": {
+                "type": "integer",
+                "allOf": [
+                  {
+                    "minimum": 0
+                  }
+                ]
+              },
+              "failed": {
+                "type": "integer",
+                "allOf": [
+                  {
+                    "minimum": 0
+                  }
+                ]
+              },
+              "unfinished": {
+                "type": "integer",
+                "allOf": [
+                  {
+                    "minimum": 0
+                  }
+                ]
+              }
+            },
+            "required": ["calls", "succeeded", "failed", "unfinished"],
+            "additionalProperties": false
+          },
+          "activeDays": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "streak": {
+            "type": "integer",
+            "allOf": [
+              {
+                "minimum": 0
+              }
+            ]
+          },
+          "activity": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionStats.Activity"
+            }
+          },
+          "models": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionStats.ModelUsage"
+            }
+          },
+          "toolUsage": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SessionStats.ToolUsage"
+            }
+          }
+        },
+        "required": [
+          "range",
+          "sessions",
+          "subagents",
+          "prompts",
+          "steps",
+          "tokens",
+          "cost",
+          "tools",
+          "activeDays",
+          "streak",
+          "activity",
+          "models",
+          "toolUsage"
+        ],
         "additionalProperties": false
       },
       "Session.Message.AgentSelected": {
