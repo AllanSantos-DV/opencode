@@ -67,32 +67,18 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     cmd &&
     input.data.location.command.list({ directory: input.draft.sessionDirectory })?.some((item) => item.name === cmd)
   ) {
-    setBusy()
-    try {
-      const messageID = Identifier.ascending("message")
-      await input.api.command({
-        sessionID: input.draft.sessionID,
-        id: messageID,
-        command: cmd,
-        arguments: tail.join(" "),
-        agent: input.draft.agent,
-        model: {
-          id: input.draft.model.modelID,
-          providerID: input.draft.model.providerID,
-          variant: input.draft.variant,
-        },
-        files: await Promise.all(
-          images.map(async (attachment) => ({
-            uri: await blobDataUrl(attachment.blob, attachment.mime),
-            name: attachment.filename,
-          })),
-        ),
-      })
-      return true
-    } catch (err) {
-      setIdle()
-      throw err
-    }
+    await input.api.command({
+      sessionID: input.draft.sessionID,
+      command: cmd,
+      text: tail.join(" "),
+      files: await Promise.all(
+        images.map(async (attachment) => ({
+          uri: await blobDataUrl(attachment.blob, attachment.mime),
+          name: attachment.filename,
+        })),
+      ),
+    })
+    return true
   }
 
   const messageID = input.messageID ?? Identifier.ascending("message")
@@ -446,16 +432,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           ?.find((command) => command.name === commandName)
         if (customCommand) {
           clearInput()
-          const messageID = Identifier.ascending("message")
-          submissionData.session.setStatus(session.id, "running")
           void submissionServerSDK.api.session
             .command({
               sessionID: session.id,
-              id: messageID,
               command: commandName,
-              arguments: args.join(" "),
-              agent,
-              model: { id: model.modelID, providerID: model.providerID, variant },
+              text: args.join(" "),
               files: await Promise.all(
                 images.map(async (attachment) => ({
                   uri: await blobDataUrl(attachment.blob, attachment.mime),
@@ -464,7 +445,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
               ),
             })
             .catch((err) => {
-              submissionData.session.setStatus(session.id, "idle")
               showToast({
                 title: language.t("prompt.toast.commandSendFailed.title"),
                 description: formatServerError(err, language.t, language.t("common.requestFailed")),
