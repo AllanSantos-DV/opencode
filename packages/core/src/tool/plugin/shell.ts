@@ -208,10 +208,13 @@ export const Plugin = {
                         Config.latest(yield* config.entries(), "experimental")?.portable_shell_scanner === true
                       const parsed = yield* ShellParse.scan(invocation.command, invocation.shell, target.absolute, {
                         portable,
+                        env: invocation.env,
                       })
-                      const directories = yield* Effect.forEach(parsed.directories, (directory) =>
-                        mutation.resolve({ path: path.resolve(target.absolute, directory), kind: "directory" }),
-                      )
+                      const directories = parsed.directoryUnknown
+                        ? []
+                        : yield* Effect.forEach(parsed.directories, (directory) =>
+                            mutation.resolve({ path: path.resolve(target.absolute, directory), kind: "directory" }),
+                          )
                       const external = [target, ...directories]
                         .map((item) => item.externalDirectory)
                         .filter((item) => item !== undefined)
@@ -219,7 +222,17 @@ export const Plugin = {
                           (item, index, items) =>
                             items.findIndex((other) => other.resource === item.resource) === index,
                         )
-                      if (external.length > 0)
+                      if (parsed.directoryUnknown)
+                        yield* permission.assert({
+                          action: "external_directory",
+                          resources: ["*"],
+                          save: [],
+                          sessionID: context.sessionID,
+                          agent: context.agent,
+                          resourceMode: "exact",
+                          source,
+                        })
+                      else if (external.length > 0)
                         yield* permission.assert({
                           action: "external_directory",
                           resources: external.map((item) => item.resource),
@@ -232,9 +245,10 @@ export const Plugin = {
                         yield* permission.assert({
                           action: name,
                           resources: parsed.commands.map((command) => command.resource),
-                          save: parsed.commands.map((command) => command.save),
+                          save: parsed.analysis === "opaque" ? [] : parsed.commands.map((command) => command.save),
                           sessionID: context.sessionID,
                           agent: context.agent,
+                          resourceMode: parsed.analysis === "opaque" ? "exact" : undefined,
                           source,
                         })
                     }
