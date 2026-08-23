@@ -1,13 +1,16 @@
 export * as Recall from "./indexer"
 
-import { and, eq, inArray } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 import { Context, Duration, Effect, Layer, Stream } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeGlobalNode } from "../effect/app-node"
 import { Flag } from "../flag/flag"
 import { SessionV1, type PartID } from "../v1/session"
-import { PartTable } from "../session/sql"
+import type { SessionSchema } from "../session/schema"
+
+type SessionID = SessionSchema.ID
+import { MessageTable, PartTable, SessionTable } from "../session/sql"
 import { RecallChunkTable } from "./sql"
 import { cosine, HashingProvider, textHash, type EmbeddingProvider } from "./provider"
 
@@ -138,6 +141,74 @@ const layer = Layer.effect(
       })
 
     const touched = new Set<PartID>()
+    const touchedSessions = new Set<SessionID>()
+
+    // One anchor chunk per session holding its title plus any compaction
+    // summaries. Gives aggregate queries ("what did we decide about X?") a
+    // high-precision entry point that plain per-part chunks lack.
+    const indexSessionMeta = (sessionIDs: SessionID[]) =>
+      Effect.gen(function* () {
+        for (const sessionID of sessionIDs) {
+          const metaID = `meta:${sessionID}`
+          const sessionRow = yield* db
+            .select({ title: SessionTable.title })
+            .from(SessionTable)
+            .where(eq(SessionTable.id, sessionID))
+            .get()
+            .pipe(Effect.orDie)
+          const summaries = yield* db
+            .select({ data: MessageTable.data })
+            .from(MessageTable)
+            .where(
+              and(
+                eq(MessageTable.session_id, sessionID),
+                sql`json_extract(${MessageTable.data}, '$.summary.body') IS NOT NULL`,
+              ),
+            )
+            .all()
+            .pipe(Effect.orDie)
+          const pieces: string[] = []
+          if (sessionRow?.title) pieces.push(`Session title: ${sessionRow.title}`)
+          for (const row of summaries) {
+            const summary = (row.data as { summary?: { title?: string; body?: string } }).summary
+            if (summary?.title) pieces.push(`Summary title: ${summary.title}`)
+            if (summary?.body) pieces.push(summary.body)
+          }
+          if (pieces.length === 0) {
+            yield* db.delete(RecallChunkTable).where(eq(RecallChunkTable.id, metaID)).run().pipe(Effect.orDie)
+            continue
+          }
+          const text = pieces.join("\n\n")
+          const hash = textHash(text)
+          const existing = yield* db
+            .select({ text_hash: RecallChunkTable.text_hash })
+            .from(RecallChunkTable)
+            .where(eq(RecallChunkTable.id, metaID))
+            .get()
+            .pipe(Effect.orDie)
+          if (existing?.text_hash === hash) continue
+          const vectors = yield* provider.embed([text])
+          const values = {
+            id: metaID,
+            session_id: sessionID,
+            message_id: "meta",
+            part_id: sessionID,
+            chunk_index: 0,
+            provider: provider.id,
+            dim: provider.dim,
+            model_id: provider.modelID,
+            text_hash: hash,
+            text,
+            vec: Buffer.from(vectors[0].buffer, vectors[0].byteOffset, vectors[0].byteLength),
+          }
+          yield* db
+            .insert(RecallChunkTable)
+            .values(values)
+            .onConflictDoUpdate({ target: RecallChunkTable.id, set: values })
+            .run()
+            .pipe(Effect.orDie)
+        }
+      })
 
     if (enabled) {
       // Backfill: anything in the part table without chunks yet. Chunks are
@@ -154,6 +225,8 @@ const layer = Layer.effect(
         for (let i = 0; i < missing.length; i += 50) {
           yield* indexParts(missing.slice(i, i + 50))
         }
+        const sessions = yield* db.selectDistinct({ id: PartTable.session_id }).from(PartTable).all().pipe(Effect.orDie)
+        yield* indexSessionMeta(sessions.map((row) => row.id))
       }).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("recall backfill failed", { cause: String(cause) }).pipe(Effect.asVoid),
@@ -165,6 +238,15 @@ const layer = Layer.effect(
         Stream.runForEach((event) =>
           Effect.sync(() => {
             touched.add(event.data.part.id)
+            touchedSessions.add(event.data.part.sessionID)
+          }),
+        ),
+        Effect.forkScoped,
+      )
+      yield* events.subscribe(SessionV1.Event.Updated).pipe(
+        Stream.runForEach((event) =>
+          Effect.sync(() => {
+            touchedSessions.add(event.data.info.id)
           }),
         ),
         Effect.forkScoped,
@@ -184,14 +266,23 @@ const layer = Layer.effect(
       yield* Effect.forever(
         Effect.gen(function* () {
           yield* Effect.sleep(Duration.millis(FLUSH_MILLIS))
-          if (touched.size === 0) return
+          if (touched.size === 0 && touchedSessions.size === 0) return
           const batch = [...touched]
+          const sessions = [...touchedSessions]
           touched.clear()
-          yield* indexParts(batch).pipe(
-            Effect.catchCause((cause) =>
-              Effect.logWarning("recall index flush failed", { cause: String(cause) }).pipe(Effect.asVoid),
+          touchedSessions.clear()
+          yield* Effect.all([
+            indexParts(batch).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("recall index flush failed", { cause: String(cause) }).pipe(Effect.asVoid),
+              ),
             ),
-          )
+            indexSessionMeta(sessions).pipe(
+              Effect.catchCause((cause) =>
+                Effect.logWarning("recall meta flush failed", { cause: String(cause) }).pipe(Effect.asVoid),
+              ),
+            ),
+          ], { discard: true })
         }),
       ).pipe(Effect.forkScoped)
     }
