@@ -53,6 +53,7 @@ import { createProviderBudgetTracker } from "./providerBudgetTracker"
 import { accumulateUsage, HOT_WORKSPACES } from "./usageBatcher"
 import { Workspace } from "@opencode-ai/console-core/workspace.js"
 import { countryFromRequest, isModelCountryRestricted } from "~/lib/request-country"
+import { isPeakPricing } from "./pricing"
 
 type ZenData = Awaited<ReturnType<typeof ZenData.list>>
 type RetryOptions = {
@@ -1048,9 +1049,8 @@ export async function handler(
     const { inputTokens, outputTokens, reasoningTokens, cacheReadTokens, cacheWrite5mTokens, cacheWrite1hTokens } =
       usageInfo
 
-    const hour = new Date().getUTCHours()
     const modelCost =
-      modelInfo.costPeak && ((hour >= 1 && hour < 4) || (hour >= 6 && hour < 10))
+      modelInfo.costPeak && isPeakPricing(new Date())
         ? modelInfo.costPeak
         : modelInfo.cost200K &&
             inputTokens + (cacheReadTokens ?? 0) + (cacheWrite5mTokens ?? 0) + (cacheWrite1hTokens ?? 0) > 200_000
