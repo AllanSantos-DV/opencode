@@ -27,6 +27,7 @@ import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { errorMessage } from "@/util/error"
 import { PluginLoader } from "./loader"
+import { missingMessage } from "./report"
 import { parsePluginSpecifier, readPluginId, readV1Plugin, resolvePluginId } from "./shared"
 import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
@@ -190,7 +191,7 @@ const layer = Layer.effect(
             report: {
               start(candidate) {},
               missing(candidate, _retry, message) {
-                publishPluginError(`Plugin ${candidate.plan.spec} skipped: ${message}`)
+                publishPluginError(missingMessage(candidate, message))
               },
               error(candidate, _retry, stage, error, resolved) {
                 const spec = candidate.plan.spec
