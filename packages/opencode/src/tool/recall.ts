@@ -12,6 +12,18 @@ import { Recall } from "@opencode-ai/core/recall/indexer"
 const callCounts = new Map<string, number>()
 const MAX_CALLS_PER_SESSION = 5
 
+/**
+ * Session id used by direct (non-LLM) invocations of this tool, such as the
+ * experimental `POST /experimental/tool/invoke` endpoint.
+ *
+ * Those calls are exempt from the anti-loop cap — there is no model turn to
+ * loop — and, just as importantly, they must not enter `callCounts` at all:
+ * the endpoint is mounted unconditionally, so a per-call id would let any
+ * caller grow that map without bound. One shared constant key, never counted,
+ * has neither problem. Pass a real `sessionId` to opt back into the cap.
+ */
+export const UNCAPPED_SESSION_ID = "ses_experimental_invoke"
+
 export const Parameters = Schema.Struct({
   query: Schema.String.annotate({
     description: "Natural language query against past conversation transcripts (all local sessions)",
@@ -34,8 +46,9 @@ export const RecallTool = Tool.define(
           // before the LLM's first turn, so the LLM doesn't need to call recall
           // itself; if it does anyway, refuse after MAX_CALLS_PER_SESSION.
           const sid = ctx.sessionID
-          const calls = (callCounts.get(sid) ?? 0) + 1
-          if (calls > MAX_CALLS_PER_SESSION) {
+          const capped = sid !== UNCAPPED_SESSION_ID
+          const calls = capped ? (callCounts.get(sid) ?? 0) + 1 : 0
+          if (capped && calls > MAX_CALLS_PER_SESSION) {
             return {
               title: `recall ${args.query} (limit reached)`,
               metadata: { count: 0, sessions: [], limitReached: true, calls },
@@ -45,7 +58,7 @@ export const RecallTool = Tool.define(
                 `Use the existing system context to answer; do not re-query.`,
             }
           }
-          callCounts.set(sid, calls)
+          if (capped) callCounts.set(sid, calls)
           const hits = yield* recall.search({ query: args.query, limit: args.limit ?? 5 })
           const sessions = [...new Set(hits.map((hit) => hit.sessionID))]
           if (hits.length === 0) {

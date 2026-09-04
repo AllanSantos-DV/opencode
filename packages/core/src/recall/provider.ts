@@ -74,26 +74,53 @@ export function makeOpenAICompatibleProvider(opts: {
     dim: opts.dim,
     modelID: opts.model,
     embed: (texts) =>
-      Effect.tryPromise({
-        try: async () => {
-          const res = await fetch(`${opts.baseURL}/v1/embeddings`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${opts.apiKey}`,
-            },
-            body: JSON.stringify({ input: texts, model: opts.model }),
+      Effect.gen(function* () {
+        const res = yield* Effect.tryPromise({
+          try: async () => {
+            const r = await fetch(`${opts.baseURL}/v1/embeddings`, {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${opts.apiKey}`,
+              },
+              body: JSON.stringify({ input: texts, model: opts.model }),
+            })
+            if (!r.ok) {
+              // The body is carried out as data, never inside an Error: a
+              // rejected request's body routinely echoes the credential that
+              // was rejected, and `Effect.orDie` below turns any Error here
+              // into a defect that the experimental tool endpoint squashes
+              // into its 400 body. Reading it defensively keeps the status —
+              // the most useful part — even when the body cannot be read.
+              return {
+                ok: false as const,
+                status: r.status,
+                statusText: r.statusText,
+                body: await r.text().catch(() => "<unreadable>"),
+              }
+            }
+            const json = (await r.json()) as { data: { embedding: number[]; index: number }[] }
+            // Sort by index to preserve input order
+            const sorted = json.data.slice().sort((a, b) => a.index - b.index)
+            return { ok: true as const, embeddings: sorted.map((d) => Float32Array.from(d.embedding)) }
+          },
+          // `catch` produces the error VALUE, not an Effect; wrapping it in
+          // Effect.fail here would make the failure channel hold an Effect.
+          catch: (e) => (e instanceof Error ? e : new Error(String(e))),
+        })
+        if (!res.ok) {
+          yield* Effect.logError("recall embeddings API rejected the request", {
+            status: res.status,
+            statusText: res.statusText,
+            body: res.body,
           })
-          if (!res.ok) {
-            throw new Error(`embeddings API returned ${res.status}: ${await res.text()}`)
-          }
-          const json = (await res.json()) as { data: { embedding: number[]; index: number }[] }
-          // Sort by index to preserve input order
-          const sorted = json.data.slice().sort((a, b) => a.index - b.index)
-          return sorted.map((d) => Float32Array.from(d.embedding))
-        },
-        catch: (e) => Effect.fail(e instanceof Error ? e : new Error(String(e))),
-      }),
+          // Status line only — the body stays in the log, see above.
+          return yield* Effect.die(
+            new Error(`embeddings API returned ${res.status} ${res.statusText}`),
+          )
+        }
+        return res.embeddings
+      }).pipe(Effect.orDie),
   }
 }
 

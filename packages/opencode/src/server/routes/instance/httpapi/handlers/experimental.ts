@@ -9,14 +9,22 @@ import { Project } from "@/project/project"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
 import { ToolJsonSchema } from "@/tool/json-schema"
+import { UNCAPPED_SESSION_ID } from "@/tool/recall"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
-import { Effect, Option } from "effect"
+import { Cause, Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { Recall } from "@opencode-ai/core/recall/indexer"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import {
+  ConsoleSwitchPayload,
+  SessionListQuery,
+  ToolInvokeApiError,
+  ToolInvokePayload,
+  ToolListQuery,
+  WorktreeApiError,
+} from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -110,31 +118,65 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     })
 
     const toolInvoke = Effect.fn("ExperimentalHttpApi.toolInvoke")(function* (ctx: {
-      payload: { tool: string; args: { query?: string; limit?: number } }
+      payload: typeof ToolInvokePayload.Type
     }) {
       if (ctx.payload.tool !== "recall") {
         return yield* Effect.fail(
-          new HttpApiError.BadRequest({ message: `toolInvoke only supports tool=recall; got ${ctx.payload.tool}` }),
+          new ToolInvokeApiError({
+            data: { message: `toolInvoke only supports tool=recall; got ${ctx.payload.tool}` },
+          }),
         )
       }
       const allTools = yield* registry.all()
       const def = allTools.find((t) => t.id === ctx.payload.tool)
       if (!def) {
         return yield* Effect.fail(
-          new HttpApiError.BadRequest({ message: `Unknown tool: ${ctx.payload.tool}` }),
+          new ToolInvokeApiError({ data: { message: `Unknown tool: ${ctx.payload.tool}` } }),
         )
       }
+      // The agent name must resolve in the agent registry: `Tool.wrap` looks it
+      // up to size the output truncation. A made-up name yields `undefined` and
+      // breaks truncation, so fall back to the configured default agent.
       const toolCtx = {
-        sessionID: ctx.payload.sessionId ?? (yield* InstanceState.context).sessionID,
+        // No session is attached to a direct HTTP invocation. The shared
+        // uncapped id keeps recall's per-session call cap from rejecting
+        // repeated lab probes without adding a key to its counter map per
+        // request; pass `sessionId` explicitly to exercise that cap.
+        sessionID: (ctx.payload.sessionId ?? UNCAPPED_SESSION_ID) as SessionID,
         messageID: "" as any,
-        agent: "invoke",
+        agent: yield* agents.defaultAgent(),
         abort: new AbortController().signal,
         messages: [],
         metadata: () => Effect.void,
         ask: () => Effect.void,
       }
+      // `Tool.wrap` funnels every failure into a defect, so the failure has to be
+      // recovered from the cause; mapError alone would never see it.
       const result = yield* def.execute(ctx.payload.args as any, toolCtx).pipe(
-        Effect.mapError((err) => new HttpApiError.BadRequest({ message: String(err) })),
+        Effect.catchCause((cause) =>
+          // A cancelled request (client disconnect, shutdown) interrupts this
+          // fiber; that is not a tool failure, so re-raise it instead of logging
+          // an error and answering a caller that is already gone.
+          Cause.hasInterruptsOnly(cause)
+            ? Effect.failCause(cause)
+            : // `ExperimentalApi` is mounted unconditionally and `serve` can bind
+              // off-loopback without a password, so the full cause — host paths
+              // and SQL among them — goes to the log, and only the summary to
+              // the wire.
+              Effect.gen(function* () {
+                yield* Effect.logError("experimental tool invoke failed", {
+                  tool: ctx.payload.tool,
+                  cause: Cause.pretty(cause),
+                })
+                return yield* Effect.fail(
+                  new ToolInvokeApiError({
+                    data: {
+                      message: `tool "${ctx.payload.tool}" failed: ${Cause.squash(cause)}`,
+                    },
+                  }),
+                )
+              }),
+        ),
       )
       return {
         output: (result as any).output,

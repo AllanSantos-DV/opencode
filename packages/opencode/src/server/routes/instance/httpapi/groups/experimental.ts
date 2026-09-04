@@ -63,7 +63,7 @@ export const ToolListQuery = Schema.Struct({
 // M4 endpoint re-added (was lost in squash merge of sprint 2 -> sprint 4).
 // Allows the lab to invoke any registered tool directly via HTTP, without
 // going through the LLM. Used by H1 (latency) probes in the lab.
-const ToolInvokePayload = Schema.Struct({
+export const ToolInvokePayload = Schema.Struct({
   tool: Schema.String,
   args: Schema.Unknown,
   sessionId: Schema.optionalKey(SessionID),
@@ -73,6 +73,15 @@ const ToolInvokeResult = Schema.Struct({
   title: Schema.String,
   metadata: Schema.Unknown,
 }).annotate({ identifier: "ToolInvokeResult" })
+
+// M4 failures must carry a reason: the tool defect alone stringifies to "[]",
+// which tells the lab nothing about why the invocation failed.
+export class ToolInvokeApiError extends Schema.ErrorClass<ToolInvokeApiError>("ToolInvokeError")(
+  {
+    data: Schema.Struct({ message: Schema.String }),
+  },
+  { httpApiStatus: 400 },
+) {}
 
 const WorktreeList = Schema.Array(Schema.String)
 const WorktreeErrorName = Schema.Union([
@@ -192,7 +201,7 @@ export const ExperimentalApi = HttpApi.make("experimental")
           query: WorkspaceRoutingQuery,
           payload: ToolInvokePayload,
           success: described(ToolInvokeResult, "Tool invocation result"),
-          error: HttpApiError.BadRequest,
+          error: ToolInvokeApiError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "tool.invoke",

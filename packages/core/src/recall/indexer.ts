@@ -1,7 +1,7 @@
 export * as Recall from "./indexer"
 
 import { and, eq, inArray, sql } from "drizzle-orm"
-import { Context, Duration, Effect, Layer, Stream } from "effect"
+import { Cause, Context, Duration, Effect, Layer, Stream } from "effect"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeGlobalNode } from "../effect/app-node"
@@ -14,8 +14,34 @@ import { MessageTable, PartTable, SessionTable } from "../session/sql"
 import { RecallChunkTable } from "./sql"
 import { cosine, HashingProvider, textHash, type EmbeddingProvider } from "./provider"
 
+/**
+ * Turn a natural-language recall query into a safe FTS5 MATCH expression.
+ *
+ * Every token becomes a quoted phrase, so FTS5 operators and punctuation
+ * (`?`, `.`, `-`, `:`, `*`, `NEAR`, `AND`) are matched literally instead of
+ * being parsed. Returns "" when nothing indexable is left, which the caller
+ * treats as "skip the FTS branch".
+ */
+function ftsExpression(query: string): string {
+  return query
+    .split(/\s+/)
+    .map((token) => token.replace(/[^\p{L}\p{N}_]+/gu, " ").trim())
+    .filter((token) => token !== "")
+    .map((token) => `"${token}"`)
+    .join(" OR ")
+}
+
 const CHUNK_CHARS = 1200
 const FLUSH_MILLIS = 2000
+
+/** One row of the FTS5 BM25 query, joined against `recall_chunk`. */
+interface FtsRow {
+  readonly session_id: string
+  readonly message_id: string
+  readonly part_id: string
+  readonly text: string
+  readonly rank: number
+}
 
 export interface Hit {
   readonly sessionID: string
@@ -365,31 +391,60 @@ const layer = Layer.effect(
         semanticHits.sort((a, b) => b.hit.score - a.hit.score)
         semanticHits.forEach((h, i) => (h.rank = i + 1))
 
-        // FTS5 BM25: top-20 by BM25 rank (lower rank = better in FTS5)
-        // db.all() returns a Promise; we wrap in Effect.tryPromise to integrate
-        // with the Effect chain (and use Effect.orDie so a missing FTS table just
-        // returns empty results — sprint 6 only runs this after migration).
-        const ftsRows = yield* Effect.tryPromise({
-          try: () =>
-            db
-              .all<{ rowid: number; text: string; rank: number }>(
-                sql`SELECT rowid, text, rank FROM recall_fts WHERE recall_fts MATCH ${trimmed} ORDER BY rank LIMIT ${SEARCH_LIMIT}`,
-              )
-              .then((rows) => rows ?? []),
-          catch: () => [] as { rowid: number; text: string; rank: number }[],
-        })
+        // The recall query is natural language, but MATCH takes an FTS5
+        // expression: `?`, `.`, `-`, `:` and friends are operators or syntax
+        // errors there, so an unescaped question would make the whole FTS
+        // branch throw. Quoting each token turns every one of them into a
+        // literal phrase, which is the plain OR-of-terms search we want.
+        const ftsQuery = ftsExpression(trimmed)
+
+        // FTS5 BM25: top-20 by BM25 rank (lower rank = better in FTS5).
+        // `db.all()` returns an Effect, not a Promise, so it is yielded directly.
+        // The chunk columns are joined in on `rowid` (the FTS table is an
+        // external-content index over `recall_chunk`), because the drizzle
+        // schema does not expose `rowid` on the semantic rows.
+        const ftsRows: readonly FtsRow[] =
+          ftsQuery === ""
+            ? []
+            : yield* db.all<FtsRow>(
+            sql`SELECT c.session_id, c.message_id, c.part_id, c.text, f.rank
+                FROM recall_fts f
+                JOIN recall_chunk c ON c.rowid = f.rowid
+                WHERE recall_fts MATCH ${ftsQuery}
+                ORDER BY f.rank
+                LIMIT ${SEARCH_LIMIT}`,
+          )
+          .pipe(
+            // Degrading to semantic-only keeps recall useful when the FTS
+            // index is missing or the query is pathological, but the reason
+            // must be visible — a silent [] here is indistinguishable from
+            // "no matches". Interruption is re-raised: the fiber is meant to
+            // die, and the rest of `search` has no yield point where it would
+            // resurface on its own.
+            Effect.catchCause((cause) =>
+              Cause.hasInterruptsOnly(cause)
+                ? // Interrupt-only causes carry no failure values, so erasing
+                  // E keeps `search`'s error channel at `never`.
+                  Effect.failCause(cause as Cause.Cause<never>)
+                : Effect.logWarning("recall fts query failed; degrading to semantic-only", {
+                    cause,
+                  }).pipe(Effect.as([] as FtsRow[])),
+            ),
+          )
         const ftsHits: Array<{ hit: Hit; rank: number }> = []
         for (const ftsRow of ftsRows) {
-          const row = rows.find((r) => (r as any).rowid === ftsRow.rowid)
-          if (!row) continue
-          // BM25 rank is negative (lower = better). Convert to similarity in [0,1].
-          const similarity = ftsRow.rank < 0 ? 1 / (1 + Math.abs(ftsRow.rank)) : 0
+          // FTS5 exposes bm25() negated, so the MORE negative the rank the
+          // better the match. Map it onto (0,1] increasing in match quality;
+          // a non-negative rank (possible when a term's IDF goes negative)
+          // is the weakest possible match and floors at 0.
+          const strength = Math.max(0, -ftsRow.rank)
+          const similarity = strength / (1 + strength)
           ftsHits.push({
             hit: {
-              sessionID: (row as any).session_id,
-              messageID: (row as any).message_id,
-              partID: (row as any).part_id,
-              text: (row as any).text,
+              sessionID: ftsRow.session_id,
+              messageID: ftsRow.message_id,
+              partID: ftsRow.part_id,
+              text: ftsRow.text,
               score: similarity,
             },
             rank: ftsHits.length + 1,
@@ -408,14 +463,20 @@ const layer = Layer.effect(
         for (const fh of ftsHits.slice(0, SEARCH_LIMIT)) {
           const cur = rrf.get(fh.hit.partID)
           rrf.set(fh.hit.partID, {
-            hit: fh.hit,
+            // Keep the semantic hit when the chunk ranked in both lists: its
+            // `score` is a cosine similarity, which is the more meaningful of
+            // the two to surface.
+            hit: cur?.hit ?? fh.hit,
             score: (cur?.score ?? 0) + 1 / (RRF_K + fh.rank),
           })
         }
 
-        // Dedup by session_id (max N per session)
-        const dedup = new Map<string, typeof rrf extends Map<string, infer V> ? V : never>()
-        for (const [partID, v] of rrf) {
+        // Dedup by session_id (max N per session). Ranked by fused score first,
+        // otherwise the cap would be filled by whichever ranker was merged first
+        // (semantic) and could drop a top-ranked FTS hit from the same session.
+        const ranked = [...rrf].sort((a, b) => b[1].score - a[1].score)
+        const dedup = new Map<string, Array<{ hit: Hit; score: number }>>()
+        for (const [partID, v] of ranked) {
           const sessKey = v.hit.sessionID
           const inSess = dedup.get(sessKey)
           if (inSess && inSess.length >= MAX_PER_SESSION) continue
