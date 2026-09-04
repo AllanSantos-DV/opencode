@@ -1264,7 +1264,7 @@ const layer = Layer.effect(
               : []
             if (step === 1 && lastUserParts.length > 0 && flags.experimentalRecallAutoInvoke && flags.experimentalTranscriptRecall) {
               const userText = lastUserParts
-                .filter((p): p is { type: "text"; text: string } => (p as any).type === "text")
+                .filter((p): p is SessionV1.TextPart => p.type === "text")
                 .map((p) => p.text)
                 .join(" ")
               // Sprint 4 fix: remove "antes" and "decidimos" (caused 20% FP in sprint 3 -
