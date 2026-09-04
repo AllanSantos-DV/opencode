@@ -51,7 +51,7 @@ export const RecallTool = Tool.define(
           if (capped && calls > MAX_CALLS_PER_SESSION) {
             return {
               title: `recall ${args.query} (limit reached)`,
-              metadata: { count: 0, sessions: [], limitReached: true, calls },
+              metadata: { count: 0, sessions: [] as string[], limitReached: true, calls },
               output:
                 `Recall already invoked ${MAX_CALLS_PER_SESSION} times in this session ` +
                 `(auto-inject via OPENCODE_RECALL_AUTO_INVOKE may have populated context already). ` +
@@ -60,23 +60,23 @@ export const RecallTool = Tool.define(
           }
           if (capped) callCounts.set(sid, calls)
           const hits = yield* recall.search({ query: args.query, limit: args.limit ?? 5 })
-          const sessions = [...new Set(hits.map((hit) => hit.sessionID))]
+          const sessions = [...new Set(hits.map((hit: { sessionID: string }) => hit.sessionID))]
           if (hits.length === 0) {
             return {
               title: `recall ${args.query}`,
-              metadata: { count: 0, sessions },
+              metadata: { count: 0, sessions, limitReached: false, calls: 0 },
               output: `No transcript matches for "${args.query}".`,
             }
           }
           const output = hits
-            .map((hit, index) => {
+            .map((hit: { sessionID: string; text: string; score: number }, index: number) => {
               const snippet = hit.text.length > 600 ? `${hit.text.slice(0, 600)}…` : hit.text
               return `[${index + 1}] session=${hit.sessionID} score=${hit.score.toFixed(3)}\n${snippet}`
             })
             .join("\n\n---\n\n")
           return {
             title: `recall ${args.query}`,
-            metadata: { count: hits.length, sessions, calls },
+            metadata: { count: hits.length, sessions, limitReached: false, calls },
             output,
           }
         }),
