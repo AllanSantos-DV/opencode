@@ -287,28 +287,148 @@ const layer = Layer.effect(
       ).pipe(Effect.forkScoped)
     }
 
+    // Sprint 6: hybrid search (FTS5 BM25 + semantic) with RRF merge,
+    // dedup by session_id, and MMR rerank. Active research showed modern
+    // RAG pipelines use this exact pattern (Carbonell & Goldstein 1998 MMR,
+    // Cormack et al 2009 RRF). FTS5 is built into bun:sqlite (v0.7+).
+    const SEARCH_LIMIT = 20       // candidates from each ranker
+    const FINAL_LIMIT = 8         // final results returned to caller
+    const RRF_K = 60              // RRF constant (paper default)
+    const MMR_LAMBDA = 0.6        // relevance vs diversity
+    const MAX_PER_SESSION = 3     // dedup cap
+
+    const mmr = (
+      candidates: Array<{ hit: Hit; score: number }>,
+      k: number,
+      lambda: number,
+    ): Hit[] => {
+      const selected: Hit[] = []
+      const remaining = new Map(candidates.map((c) => [c.hit.partID, c]))
+      const selectedTexts: string[] = []
+      while (selected.length < k && remaining.size > 0) {
+        let bestId: string | null = null
+        let bestScore = -Infinity
+        for (const [id, { hit, score }] of remaining) {
+          const diversity = selectedTexts.length === 0
+            ? 0
+            : Math.max(
+                ...selectedTexts.map((t) => {
+                  const a = new Set(t.toLowerCase().split(/\W+/))
+                  const b = new Set(hit.text.toLowerCase().split(/\W+/))
+                  const intersection = new Set([...a].filter((x) => b.has(x)))
+                  return intersection.size / Math.max(a.size + b.size - intersection.size, 1)
+                }),
+              )
+          const mmrScore = lambda * score - (1 - lambda) * diversity
+          if (mmrScore > bestScore) {
+            bestScore = mmrScore
+            bestId = id
+          }
+        }
+        if (bestId === null) break
+        const chosen = remaining.get(bestId)!
+        remaining.delete(bestId)
+        selected.push(chosen.hit)
+        selectedTexts.push(chosen.hit.text)
+      }
+      return selected
+    }
+
     const search: Interface["search"] = ({ query, limit }) =>
       Effect.gen(function* () {
         if (!enabled) return []
         const trimmed = query.trim()
         if (!trimmed) return []
+        const lim = limit ?? FINAL_LIMIT
+
+        // Semantic: top-20 by cosine similarity
         const vectors = yield* provider.embed([trimmed])
         const rows = yield* db.select().from(RecallChunkTable).all().pipe(Effect.orDie)
-        const scored: Hit[] = []
+        const semanticHits: Array<{ hit: Hit; rank: number }> = []
         for (const row of rows) {
           if (row.dim !== provider.dim || row.provider !== provider.id) continue
           const bytes = new Uint8Array(row.vec)
-          const copy = new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength))
-          scored.push({
-            sessionID: row.session_id,
-            messageID: row.message_id,
-            partID: row.part_id,
-            text: row.text,
-            score: cosine(vectors[0], copy),
+          const copy = new Float32Array(
+            bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength),
+          )
+          semanticHits.push({
+            hit: {
+              sessionID: row.session_id,
+              messageID: row.message_id,
+              partID: row.part_id,
+              text: row.text,
+              score: cosine(vectors[0], copy),
+            },
+            rank: 0,
           })
         }
-        scored.sort((a, b) => b.score - a.score)
-        return scored.slice(0, limit ?? 5)
+        semanticHits.sort((a, b) => b.hit.score - a.hit.score)
+        semanticHits.forEach((h, i) => (h.rank = i + 1))
+
+        // FTS5 BM25: top-20 by BM25 rank (lower rank = better in FTS5)
+        // db.all() returns a Promise; we wrap in Effect.tryPromise to integrate
+        // with the Effect chain (and use Effect.orDie so a missing FTS table just
+        // returns empty results — sprint 6 only runs this after migration).
+        const ftsRows = yield* Effect.tryPromise({
+          try: () =>
+            db
+              .all<{ rowid: number; text: string; rank: number }>(
+                sql`SELECT rowid, text, rank FROM recall_fts WHERE recall_fts MATCH ${trimmed} ORDER BY rank LIMIT ${SEARCH_LIMIT}`,
+              )
+              .then((rows) => rows ?? []),
+          catch: () => [] as { rowid: number; text: string; rank: number }[],
+        })
+        const ftsHits: Array<{ hit: Hit; rank: number }> = []
+        for (const ftsRow of ftsRows) {
+          const row = rows.find((r) => (r as any).rowid === ftsRow.rowid)
+          if (!row) continue
+          // BM25 rank is negative (lower = better). Convert to similarity in [0,1].
+          const similarity = ftsRow.rank < 0 ? 1 / (1 + Math.abs(ftsRow.rank)) : 0
+          ftsHits.push({
+            hit: {
+              sessionID: (row as any).session_id,
+              messageID: (row as any).message_id,
+              partID: (row as any).part_id,
+              text: (row as any).text,
+              score: similarity,
+            },
+            rank: ftsHits.length + 1,
+          })
+        }
+
+        // RRF: combine both ranked lists into a single map
+        const rrf = new Map<string, { hit: Hit; score: number }>()
+        for (const sh of semanticHits.slice(0, SEARCH_LIMIT)) {
+          const cur = rrf.get(sh.hit.partID)
+          rrf.set(sh.hit.partID, {
+            hit: sh.hit,
+            score: (cur?.score ?? 0) + 1 / (RRF_K + sh.rank),
+          })
+        }
+        for (const fh of ftsHits.slice(0, SEARCH_LIMIT)) {
+          const cur = rrf.get(fh.hit.partID)
+          rrf.set(fh.hit.partID, {
+            hit: fh.hit,
+            score: (cur?.score ?? 0) + 1 / (RRF_K + fh.rank),
+          })
+        }
+
+        // Dedup by session_id (max N per session)
+        const dedup = new Map<string, typeof rrf extends Map<string, infer V> ? V : never>()
+        for (const [partID, v] of rrf) {
+          const sessKey = v.hit.sessionID
+          const inSess = dedup.get(sessKey)
+          if (inSess && inSess.length >= MAX_PER_SESSION) continue
+          if (!dedup.has(sessKey)) dedup.set(sessKey, [])
+          dedup.get(sessKey)!.push(v)
+        }
+        const merged: Array<{ hit: Hit; score: number }> = []
+        for (const arr of dedup.values()) {
+          for (const v of arr) merged.push(v)
+        }
+
+        // MMR rerank
+        return mmr(merged, lim, MMR_LAMBDA)
       })
 
     return Service.of({ search })

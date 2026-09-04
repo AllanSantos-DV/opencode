@@ -3,12 +3,14 @@ import * as Tool from "./tool"
 import DESCRIPTION from "./recall.txt"
 import { Recall } from "@opencode-ai/core/recall/indexer"
 
-// Sprint 5 fix (anti-loop): per-session call counter. Recall can be invoked
-// repeatedly by the LLM when context is auto-injected (M3), producing doom_loop
-// warnings and 60s+ timeouts. We refuse calls > MAX_CALLS_PER_SESSION per
-// session — context is already in system, no need to re-inject.
+// Sprint 6 fix: anti-loop from sprint 5 was too aggressive
+// (MAX_CALLS_PER_SESSION=2 blocked LLM follow-up recall queries even when
+// it had hit budget). The original M3 injects context on the first call, so
+// the LLM does not normally need to call recall — but when it does (e.g. to
+// drill down or follow up), we should not block the second call. Bumped
+// to 5 to match the default recall limit.
 const callCounts = new Map<string, number>()
-const MAX_CALLS_PER_SESSION = 2
+const MAX_CALLS_PER_SESSION = 5
 
 export const Parameters = Schema.Struct({
   query: Schema.String.annotate({

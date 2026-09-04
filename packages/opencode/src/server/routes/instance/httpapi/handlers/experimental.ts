@@ -14,6 +14,7 @@ import { Worktree } from "@/worktree"
 import { Effect, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import { Recall } from "@opencode-ai/core/recall/indexer"
 import { InstanceHttpApi } from "../api"
 import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
 
@@ -108,6 +109,41 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return yield* registry.ids()
     })
 
+    const toolInvoke = Effect.fn("ExperimentalHttpApi.toolInvoke")(function* (ctx: {
+      payload: { tool: string; args: { query?: string; limit?: number } }
+    }) {
+      if (ctx.payload.tool !== "recall") {
+        return yield* Effect.fail(
+          new HttpApiError.BadRequest({ message: `toolInvoke only supports tool=recall; got ${ctx.payload.tool}` }),
+        )
+      }
+      const allTools = yield* registry.all()
+      const def = allTools.find((t) => t.id === ctx.payload.tool)
+      if (!def) {
+        return yield* Effect.fail(
+          new HttpApiError.BadRequest({ message: `Unknown tool: ${ctx.payload.tool}` }),
+        )
+      }
+      const toolCtx = {
+        sessionID: ctx.payload.sessionId ?? (yield* InstanceState.context).sessionID,
+        messageID: "" as any,
+        agent: "invoke",
+        abort: new AbortController().signal,
+        messages: [],
+        metadata: () => Effect.void,
+        ask: () => Effect.void,
+      }
+      const result = yield* def.execute(ctx.payload.args as any, toolCtx).pipe(
+        Effect.mapError((err) => new HttpApiError.BadRequest({ message: String(err) })),
+      )
+      return {
+        output: (result as any).output,
+        title: (result as any).title,
+        metadata: (result as any).metadata,
+      }
+    })
+
+
     const worktree = Effect.fn("ExperimentalHttpApi.worktree")(function* () {
       const ctx = yield* InstanceState.context
       return yield* project.sandboxes(ctx.project.id)
@@ -182,6 +218,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("consoleSwitch", switchConsole)
       .handle("tool", tool)
       .handle("toolIDs", toolIDs)
+      .handle("toolInvoke", toolInvoke)
       .handle("worktree", worktree)
       .handle("worktreeCreate", worktreeCreate)
       .handle("worktreeRemove", worktreeRemove)
