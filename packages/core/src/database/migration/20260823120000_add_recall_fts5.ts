@@ -12,12 +12,4 @@ export default {
       yield* tx.run(`CREATE TRIGGER IF NOT EXISTS recall_au AFTER UPDATE ON recall_chunk BEGIN DELETE FROM recall_fts WHERE rowid = old.rowid; INSERT INTO recall_fts(rowid, text) VALUES (new.rowid, new.text); END`)
     })
   },
-  down(tx) {
-    return Effect.gen(function* () {
-      yield* tx.run(`DROP TRIGGER IF EXISTS recall_au`)
-      yield* tx.run(`DROP TRIGGER IF EXISTS recall_ad`)
-      yield* tx.run(`DROP TRIGGER IF EXISTS recall_ai`)
-      yield* tx.run(`DROP TABLE IF EXISTS recall_fts`)
-    })
-  },
 } satisfies DatabaseMigration.Migration
